@@ -550,6 +550,61 @@ class RecommendationEngine:
                 )
 
     # ------------------------------------------------------------------
+    # Confidence scoring
+    # ------------------------------------------------------------------
+
+    def _compute_confidence(
+        self,
+        resource: dict,
+        resource_type: str,
+        has_utilization_data: bool = False,
+    ) -> int:
+        """Compute a confidence score (0-100) for a recommendation.
+
+        Factors:
+        - Data completeness: do we have utilization metrics?
+        - Resource age: newer resources have less data = lower confidence
+        - Utilization variance: stable = higher confidence
+        """
+        score = 50  # base score
+
+        # Data completeness: utilization data available
+        if has_utilization_data:
+            score += 25
+        else:
+            score -= 10
+
+        # Resource age — older resources have more data
+        launch_time = resource.get("launch_time") or resource.get("start_time") or resource.get("created")
+        if launch_time:
+            if isinstance(launch_time, str):
+                try:
+                    launch_dt = datetime.fromisoformat(launch_time)
+                except ValueError:
+                    launch_dt = None
+            else:
+                launch_dt = launch_time
+
+            if launch_dt:
+                if launch_dt.tzinfo is None:
+                    launch_dt = launch_dt.replace(tzinfo=timezone.utc)
+                age_days = (datetime.now(tz=timezone.utc) - launch_dt).days
+                if age_days > 90:
+                    score += 15
+                elif age_days > 30:
+                    score += 10
+                elif age_days > 7:
+                    score += 5
+                else:
+                    score -= 10  # very new, not enough data
+
+        # Resource type confidence adjustment
+        if resource_type in ("ebs_volume", "elastic_ip", "ebs_snapshot"):
+            score += 10  # these are straightforward checks
+
+        return max(0, min(100, score))
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
@@ -567,8 +622,24 @@ class RecommendationEngine:
         priority: int,
         well_architected_pillar: str,
         action: str,
+        confidence_score: int | None = None,
     ) -> None:
         """Append a recommendation to the internal list."""
+        # Auto-compute confidence if not provided
+        if confidence_score is None:
+            resource = next(
+                (r for r in self.resources
+                 if r.get("resource_id") == resource_id
+                 or r.get("instance_id") == resource_id
+                 or r.get("volume_id") == resource_id
+                 or r.get("name") == resource_id
+                 or r.get("db_instance_id") == resource_id
+                 or r.get("domain_name") == resource_id),
+                {},
+            )
+            has_util = self.utilization_analyzer is not None
+            confidence_score = self._compute_confidence(resource, resource_type, has_util)
+
         rec: dict = {
             "id": str(uuid.uuid4()),
             "category": category,
@@ -582,10 +653,11 @@ class RecommendationEngine:
             "priority": priority,
             "well_architected_pillar": well_architected_pillar,
             "action": action,
+            "confidence_score": confidence_score,
         }
         self._recommendations.append(rec)
-        log.debug("Recommendation: %s — %s (saves $%.2f/mo)",
-                   category, title, estimated_monthly_savings)
+        log.debug("Recommendation: %s — %s (saves $%.2f/mo, confidence %d%%)",
+                   category, title, estimated_monthly_savings, confidence_score)
 
     @staticmethod
     def _estimate_ec2_ebs_cost(instance: dict) -> float:

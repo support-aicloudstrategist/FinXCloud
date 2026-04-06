@@ -20,6 +20,9 @@ from finxcloud.scanner.s3 import S3Scanner
 from finxcloud.scanner.lambda_ import LambdaScanner
 from finxcloud.scanner.networking import NetworkingScanner
 from finxcloud.scanner.opensearch import OpenSearchScanner
+from finxcloud.analyzer.anomaly import AnomalyDetector
+from finxcloud.analyzer.budget import BudgetTracker
+from finxcloud.analyzer.commitments import CommitmentsAnalyzer
 from finxcloud.analyzer.cost_explorer import CostExplorerAnalyzer
 from finxcloud.analyzer.utilization import UtilizationAnalyzer
 from finxcloud.analyzer.recommendations import RecommendationEngine
@@ -178,6 +181,52 @@ def scan(
 
     # Merge cost data for reporting
     merged_cost_data = _merge_cost_data(all_cost_data)
+
+    # Cost Intelligence features
+    console.print("\n[bold]Running cost intelligence analysis...[/bold]")
+    ce_primary = CostExplorerAnalyzer(session)
+
+    with console.status("[bold green]Detecting cost anomalies..."):
+        try:
+            detector = AnomalyDetector(ce_primary)
+            anomaly_data = detector.detect(days)
+            anomaly_count = len(anomaly_data.get("anomalies", []))
+            if anomaly_count:
+                console.print(f"  [yellow]! {anomaly_count} cost anomalies detected[/yellow]")
+            else:
+                console.print(f"  [green]No cost anomalies detected[/green]")
+        except Exception as e:
+            console.print(f"  [yellow]Anomaly detection unavailable: {e}[/yellow]")
+
+    with console.status("[bold green]Analyzing budget and forecast..."):
+        try:
+            budget_account = accounts_to_scan[0][0] if accounts_to_scan else "default"
+            tracker = BudgetTracker(ce_primary)
+            budget_data = tracker.analyze(budget_account, days)
+            if budget_data.get("budget", 0) > 0:
+                status = "[green]on track[/green]" if budget_data["on_track"] else "[red]over budget[/red]"
+                console.print(f"  Budget: ${budget_data['budget']:.2f}/mo | MTD: ${budget_data['actual_mtd']:.2f} | Forecast: ${budget_data['forecast_eom']:.2f} — {status}")
+            else:
+                console.print(f"  No budget set. Forecast EOM: [bold]${budget_data['forecast_eom']:.2f}[/bold]")
+        except Exception as e:
+            console.print(f"  [yellow]Budget analysis unavailable: {e}[/yellow]")
+
+    with console.status("[bold green]Analyzing historical trends..."):
+        try:
+            monthly_trend = ce_primary.get_monthly_trend(months=6)
+            if monthly_trend:
+                latest = monthly_trend[-1]
+                console.print(f"  Latest month ({latest['month']}): ${latest['amount']:.2f} ({latest['change_pct']:+.1f}% MoM)")
+        except Exception as e:
+            console.print(f"  [yellow]Trend analysis unavailable: {e}[/yellow]")
+
+    with console.status("[bold green]Analyzing commitment coverage..."):
+        try:
+            commitments_analyzer = CommitmentsAnalyzer(session)
+            commitments_data = commitments_analyzer.analyze(days)
+            console.print(f"  Commitment coverage: [bold]{commitments_data['total_committed_pct']:.1f}%[/bold] | On-demand: {commitments_data['total_on_demand_pct']:.1f}%")
+        except Exception as e:
+            console.print(f"  [yellow]Commitment analysis unavailable: {e}[/yellow]")
 
     # Utilization analysis
     utilization_analyzer = None

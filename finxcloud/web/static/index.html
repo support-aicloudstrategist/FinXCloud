@@ -505,6 +505,33 @@
         </div>
       </div>
 
+      <!-- Cost Intelligence: Budget & Anomalies -->
+      <div class="metrics" id="budgetMetrics" style="display:none;">
+        <div class="card">
+          <div class="label">Monthly Budget</div>
+          <div class="value" id="metricBudget">--</div>
+        </div>
+        <div class="card">
+          <div class="label">Actual MTD</div>
+          <div class="value cost" id="metricMTD">$0.00</div>
+        </div>
+        <div class="card">
+          <div class="label">Forecast EOM</div>
+          <div class="value" id="metricForecast" style="color:var(--orange);">$0.00</div>
+        </div>
+        <div class="card">
+          <div class="label">Budget Used</div>
+          <div class="value" id="metricBudgetPct">0%</div>
+        </div>
+        <div class="card">
+          <div class="label">Commitment Coverage</div>
+          <div class="value" id="metricCommitPct" style="color:var(--primary);">0%</div>
+        </div>
+      </div>
+
+      <!-- Anomaly alerts -->
+      <div id="anomalyAlerts" style="display:none;margin-bottom:1.5rem;"></div>
+
       <!-- Charts -->
       <div class="chart-grid">
         <div class="chart-panel">
@@ -523,6 +550,14 @@
           <h3>Savings by Category</h3>
           <canvas id="chartSavings"></canvas>
         </div>
+        <div class="chart-panel">
+          <h3>Monthly Cost Trend</h3>
+          <canvas id="chartMonthlyTrend"></canvas>
+        </div>
+        <div class="chart-panel">
+          <h3>Commitment Coverage</h3>
+          <canvas id="chartCommitments"></canvas>
+        </div>
       </div>
 
       <!-- Recommendations -->
@@ -530,9 +565,20 @@
         <h3>Top Recommendations</h3>
         <table>
           <thead>
-            <tr><th>#</th><th>Category</th><th>Recommendation</th><th>Effort</th><th>Est. Savings/mo</th></tr>
+            <tr><th>#</th><th>Category</th><th>Recommendation</th><th>Confidence</th><th>Effort</th><th>Est. Savings/mo</th></tr>
           </thead>
           <tbody id="recsBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Commitment Recommendations -->
+      <div class="table-panel" id="commitRecsPanel" style="display:none;">
+        <h3>Commitment Purchase Recommendations</h3>
+        <table>
+          <thead>
+            <tr><th>Type</th><th>Recommendation</th><th>Priority</th><th>Est. Savings</th></tr>
+          </thead>
+          <tbody id="commitRecsBody"></tbody>
         </table>
       </div>
 
@@ -851,20 +897,72 @@ function renderDashboard(data) {
   document.getElementById('metricSavingsPct').textContent = ov.savings_percentage + '%';
   document.getElementById('metricQuickWins').textContent = summary.quick_wins_count;
 
+  // Budget & Commitment metrics
+  const budget = data.budget || {};
+  const commitments = data.commitments || {};
+  if (budget.forecast_eom !== undefined || commitments.total_committed_pct !== undefined) {
+    document.getElementById('budgetMetrics').style.display = '';
+    document.getElementById('metricBudget').textContent = budget.budget > 0 ? '$' + budget.budget.toFixed(2) : 'Not set';
+    document.getElementById('metricMTD').textContent = '$' + (budget.actual_mtd || 0).toFixed(2);
+    document.getElementById('metricForecast').textContent = '$' + (budget.forecast_eom || 0).toFixed(2);
+    const pctUsed = budget.pct_used || 0;
+    document.getElementById('metricBudgetPct').textContent = budget.budget > 0 ? pctUsed.toFixed(1) + '%' : '--';
+    document.getElementById('metricBudgetPct').style.color = pctUsed > 90 ? 'var(--red)' : pctUsed > 70 ? 'var(--orange)' : 'var(--green)';
+    document.getElementById('metricForecast').style.color = (budget.budget > 0 && !budget.on_track) ? 'var(--red)' : 'var(--orange)';
+    document.getElementById('metricCommitPct').textContent = (commitments.total_committed_pct || 0).toFixed(1) + '%';
+  }
+
+  // Anomaly alerts
+  const anomalies = (data.anomalies || {}).anomalies || [];
+  const alertsEl = document.getElementById('anomalyAlerts');
+  if (anomalies.length > 0) {
+    alertsEl.style.display = 'block';
+    alertsEl.innerHTML = `<div style="background:var(--red-bg);border-radius:var(--radius);padding:1rem;border-left:4px solid var(--red);">
+      <strong style="color:var(--red);">Cost Anomalies Detected (${anomalies.length})</strong>
+      <div style="margin-top:0.5rem;font-size:0.9rem;">${anomalies.map(a =>
+        `<div style="margin:0.25rem 0;">${esc(a.date)}: <strong>$${a.amount.toFixed(2)}</strong> — ${a.pct_above_avg.toFixed(0)}% above 7-day avg ($${a.rolling_avg.toFixed(2)}) <span class="badge ${a.severity === 'high' ? 'badge-high' : a.severity === 'medium' ? 'badge-medium' : 'badge-low'}">${a.severity}</span></div>`
+      ).join('')}</div>
+    </div>`;
+  } else {
+    alertsEl.style.display = 'none';
+  }
+
   renderServiceChart(detailed.cost_breakdown.by_service);
   renderRegionChart(detailed.cost_breakdown.by_region);
   renderTrendChart(detailed.cost_breakdown.daily_trend);
   renderSavingsChart(summary.savings_by_category);
+  renderMonthlyTrendChart(data.trends || {});
+  renderCommitmentsChart(commitments);
+
+  // Commitment recommendations
+  const commitRecs = (commitments.recommendations || []);
+  if (commitRecs.length > 0) {
+    document.getElementById('commitRecsPanel').style.display = '';
+    const commitBody = document.getElementById('commitRecsBody');
+    commitBody.innerHTML = '';
+    commitRecs.forEach(r => {
+      const prioClass = r.priority === 'high' ? 'badge-high' : r.priority === 'medium' ? 'badge-medium' : 'badge-low';
+      commitBody.innerHTML += `<tr>
+        <td>${esc(r.type || '')}</td>
+        <td>${esc(r.description || '')}</td>
+        <td><span class="badge ${prioClass}">${esc(r.priority || '')}</span></td>
+        <td class="amount-savings">${(r.estimated_savings_pct || 0).toFixed(0)}%</td>
+      </tr>`;
+    });
+  }
 
   const recsBody = document.getElementById('recsBody');
   recsBody.innerHTML = '';
   (summary.top_recommendations || []).forEach((rec, i) => {
     const effortClass = rec.effort_level === 'low' ? 'badge-low' :
                         rec.effort_level === 'medium' ? 'badge-medium' : 'badge-high';
+    const conf = rec.confidence_score != null ? rec.confidence_score : '--';
+    const confColor = conf >= 70 ? 'var(--green)' : conf >= 40 ? 'var(--orange)' : 'var(--red)';
     recsBody.innerHTML += `<tr>
       <td>${i+1}</td>
       <td>${esc(rec.category || '')}</td>
       <td>${esc(rec.title || '')}</td>
+      <td><span style="font-weight:600;color:${typeof conf === 'number' ? confColor : 'var(--gray-500)'}">${typeof conf === 'number' ? conf + '%' : conf}</span></td>
       <td><span class="badge ${effortClass}">${esc(rec.effort_level || '')}</span></td>
       <td class="amount-savings">$${(rec.estimated_monthly_savings || 0).toFixed(2)}</td>
     </tr>`;
@@ -976,6 +1074,63 @@ function renderSavingsChart(savingsByCat) {
       indexAxis: 'y', responsive: true,
       plugins: { legend: { display: false } },
       scales: { x: { beginAtZero: true, ticks: { callback: v => '$' + v.toFixed(0) } } },
+    },
+  });
+}
+
+function renderMonthlyTrendChart(trends) {
+  destroyChart('monthlyTrend');
+  const monthly = trends.monthly_trend || [];
+  if (!monthly.length) return;
+  const bgColors = monthly.map(m => m.change_pct > 0 ? '#dc262688' : '#16a34a88');
+  const borderColors = monthly.map(m => m.change_pct > 0 ? '#dc2626' : '#16a34a');
+  chartInstances['monthlyTrend'] = new Chart(document.getElementById('chartMonthlyTrend'), {
+    type: 'bar',
+    data: {
+      labels: monthly.map(m => m.month),
+      datasets: [{
+        label: 'Monthly Cost (USD)', data: monthly.map(m => m.amount),
+        backgroundColor: bgColors, borderColor: borderColors, borderWidth: 1,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { afterLabel: ctx => {
+          const pct = monthly[ctx.dataIndex].change_pct;
+          return pct !== 0 ? `MoM: ${pct > 0 ? '+' : ''}${pct.toFixed(1)}%` : '';
+        }}},
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => '$' + v.toFixed(0) } },
+        x: { ticks: { font: { size: 10 } } },
+      },
+    },
+  });
+}
+
+function renderCommitmentsChart(commitments) {
+  destroyChart('commitments');
+  const committed = commitments.total_committed_pct || 0;
+  const onDemand = commitments.total_on_demand_pct || 100;
+  chartInstances['commitments'] = new Chart(document.getElementById('chartCommitments'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Committed (RI/SP)', 'On-Demand'],
+      datasets: [{
+        data: [committed, onDemand],
+        backgroundColor: ['#16a34a88', '#dc262688'],
+        borderColor: ['#16a34a', '#dc2626'],
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => ctx.parsed.toFixed(1) + '%' } },
+      },
     },
   });
 }

@@ -33,6 +33,9 @@ from finxcloud.scanner.s3 import S3Scanner
 from finxcloud.scanner.lambda_ import LambdaScanner
 from finxcloud.scanner.networking import NetworkingScanner
 from finxcloud.scanner.opensearch import OpenSearchScanner
+from finxcloud.analyzer.anomaly import AnomalyDetector
+from finxcloud.analyzer.budget import BudgetTracker
+from finxcloud.analyzer.commitments import CommitmentsAnalyzer
 from finxcloud.analyzer.cost_explorer import CostExplorerAnalyzer
 from finxcloud.analyzer.utilization import UtilizationAnalyzer
 from finxcloud.analyzer.recommendations import RecommendationEngine
@@ -340,6 +343,46 @@ def _run_scan(scan_id: str, req: ScanRequest) -> None:
         # Merge cost data
         merged_cost_data = _merge_cost_data(all_cost_data)
 
+        # Cost Intelligence: Anomaly detection
+        anomaly_data = {}
+        scan["progress"] = "Running anomaly detection..."
+        try:
+            ce_primary = CostExplorerAnalyzer(session)
+            detector = AnomalyDetector(ce_primary)
+            anomaly_data = detector.detect(req.days)
+        except Exception:
+            log.exception("Anomaly detection failed")
+
+        # Cost Intelligence: Budget tracking
+        budget_data = {}
+        scan["progress"] = "Analyzing budget and forecast..."
+        try:
+            tracker = BudgetTracker(ce_primary)
+            account_id_for_budget = accounts_to_scan[0][0] if accounts_to_scan else "default"
+            budget_data = tracker.analyze(account_id_for_budget, req.days)
+        except Exception:
+            log.exception("Budget analysis failed")
+
+        # Cost Intelligence: Historical trends
+        trends_data = {}
+        scan["progress"] = "Analyzing historical cost trends..."
+        try:
+            trends_data = {
+                "monthly_trend": ce_primary.get_monthly_trend(months=6),
+                "monthly_by_service": ce_primary.get_monthly_cost_by_service(months=6),
+            }
+        except Exception:
+            log.exception("Historical trend analysis failed")
+
+        # Cost Intelligence: RI/Savings Plans coverage
+        commitments_data = {}
+        scan["progress"] = "Analyzing commitment coverage..."
+        try:
+            commitments_analyzer = CommitmentsAnalyzer(session)
+            commitments_data = commitments_analyzer.analyze(req.days)
+        except Exception:
+            log.exception("Commitments analysis failed")
+
         # Utilization
         utilization_analyzer = None
         if not req.skip_utilization:
@@ -376,6 +419,10 @@ def _run_scan(scan_id: str, req: ScanRequest) -> None:
             "recommendations": recommendations,
             "resources": all_resources,
             "cost_data": merged_cost_data,
+            "anomalies": anomaly_data,
+            "budget": budget_data,
+            "trends": trends_data,
+            "commitments": commitments_data,
             "s3_keys": s3_keys,
         }
 
@@ -532,6 +579,34 @@ async def get_s3_report(req: S3ReportRequest, filename: str = Query(...), _user:
     session = create_session(creds)
     s3w = S3Writer(session, req.bucket, req.prefix)
     return s3w.read_json(filename)
+
+
+# ---------------------------------------------------------------------------
+# Budget management
+# ---------------------------------------------------------------------------
+
+class BudgetRequest(BaseModel):
+    account_id: str
+    monthly_budget: float
+
+
+@app.post("/api/budgets")
+async def set_budget(req: BudgetRequest, _user: dict = Depends(require_auth)):
+    """Set a monthly budget for an account."""
+    from finxcloud.analyzer.budget import BudgetTracker, _DEFAULT_BUDGET_PATH
+    tracker = BudgetTracker.__new__(BudgetTracker)
+    tracker._budget_path = _DEFAULT_BUDGET_PATH
+    tracker.set_budget(req.account_id, req.monthly_budget)
+    return {"status": "ok", "account_id": req.account_id, "monthly_budget": req.monthly_budget}
+
+
+@app.get("/api/budgets")
+async def get_budgets(_user: dict = Depends(require_auth)):
+    """Get all saved budgets."""
+    from finxcloud.analyzer.budget import BudgetTracker, _DEFAULT_BUDGET_PATH
+    tracker = BudgetTracker.__new__(BudgetTracker)
+    tracker._budget_path = _DEFAULT_BUDGET_PATH
+    return tracker.get_budgets()
 
 
 def _merge_cost_data(cost_data_by_account: dict) -> dict:

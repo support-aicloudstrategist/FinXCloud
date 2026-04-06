@@ -91,6 +91,79 @@ class CostExplorerAnalyzer:
             results.append({"date": start, "amount": round(amount, 4)})
         return results
 
+    def get_monthly_trend(self, months: int = 6) -> list[dict]:
+        """Return monthly cost trend for historical analysis.
+
+        Args:
+            months: Number of look-back months (default 6, max 12).
+
+        Returns:
+            List of dicts with keys: month, amount, change_pct (vs prior month).
+        """
+        months = min(months, 12)
+        days = months * 31  # overshoot to cover full months
+        raw = self._query_cost_explorer(
+            granularity="MONTHLY",
+            group_by=None,
+            days=days,
+        )
+        results: list[dict] = []
+        for tp in raw:
+            start = tp["TimePeriod"]["Start"]
+            total = tp.get("Total", {})
+            amount = float(total.get("UnblendedCost", {}).get("Amount", 0.0))
+            results.append({"month": start[:7], "amount": round(amount, 2)})
+
+        # Calculate month-over-month change
+        for i in range(len(results)):
+            if i == 0:
+                results[i]["change_pct"] = 0.0
+            else:
+                prev = results[i - 1]["amount"]
+                if prev > 0:
+                    results[i]["change_pct"] = round(
+                        ((results[i]["amount"] - prev) / prev) * 100, 1,
+                    )
+                else:
+                    results[i]["change_pct"] = 0.0
+
+        return results
+
+    def get_monthly_cost_by_service(self, months: int = 6) -> list[dict]:
+        """Return monthly cost grouped by service for trend analysis.
+
+        Args:
+            months: Number of look-back months (default 6).
+
+        Returns:
+            List of dicts with keys: month, services (list of {service, amount}).
+        """
+        months = min(months, 12)
+        days = months * 31
+        raw = self._query_cost_explorer(
+            granularity="MONTHLY",
+            group_by=[{"Type": "DIMENSION", "Key": "SERVICE"}],
+            days=days,
+        )
+
+        results: list[dict] = []
+        for tp in raw:
+            month = tp["TimePeriod"]["Start"][:7]
+            services = []
+            for group in tp.get("Groups", []):
+                service = group["Keys"][0]
+                amount = float(
+                    group.get("Metrics", {})
+                    .get("UnblendedCost", {})
+                    .get("Amount", 0.0)
+                )
+                if amount > 0.01:
+                    services.append({"service": service, "amount": round(amount, 2)})
+            services.sort(key=lambda s: s["amount"], reverse=True)
+            results.append({"month": month, "services": services})
+
+        return results
+
     def get_total_cost(self, days: int = 30) -> float:
         """Return total unblended cost over the given period.
 
