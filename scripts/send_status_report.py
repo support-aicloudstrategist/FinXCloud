@@ -19,6 +19,7 @@ Environment variables required for sending:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -26,7 +27,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from finxcloud.email.sender import EmailConfig, send_email
+from finxcloud.email.sender import EmailConfig, send_email, send_email_ses
 from finxcloud.email.templates import status_report_html
 
 
@@ -85,7 +86,10 @@ def build_status_data() -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Generate and send AICloud Strategist status report")
     parser.add_argument("--to", default="support@aicloudstrategist.com", help="Recipient email(s), comma-separated")
+    parser.add_argument("--from-email", default=os.environ.get("FINXCLOUD_FROM_EMAIL", ""), help="Sender email address")
     parser.add_argument("--subject", default=None, help="Email subject")
+    parser.add_argument("--via", choices=["ses", "smtp"], default="ses", help="Send via AWS SES API (default) or SMTP")
+    parser.add_argument("--region", default=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"), help="AWS region for SES")
     parser.add_argument("--html-only", action="store_true", help="Generate HTML file only, do not send")
     parser.add_argument("--output", default="reports/status_report.html", help="Output HTML file path")
     args = parser.parse_args()
@@ -107,31 +111,27 @@ def main():
     if args.html_only:
         return
 
-    # Send email
-    config = EmailConfig()
-    if not config.is_configured:
-        print(
-            "\nEmail not configured. Set these environment variables to enable sending:\n"
-            "  FINXCLOUD_SMTP_HOST     — SMTP server (e.g. smtp.gmail.com)\n"
-            "  FINXCLOUD_SMTP_USER     — SMTP username / email\n"
-            "  FINXCLOUD_SMTP_PASSWORD — SMTP password or app password\n"
-            "  FINXCLOUD_FROM_EMAIL    — Sender address (optional)\n"
-            "\nExample with Gmail:\n"
-            "  export FINXCLOUD_SMTP_HOST=smtp.gmail.com\n"
-            "  export FINXCLOUD_SMTP_USER=your@gmail.com\n"
-            "  export FINXCLOUD_SMTP_PASSWORD=your-app-password\n"
-            "\nExample with AWS SES:\n"
-            "  export FINXCLOUD_SMTP_HOST=email-smtp.us-east-1.amazonaws.com\n"
-            "  export FINXCLOUD_SMTP_USER=your-ses-smtp-user\n"
-            "  export FINXCLOUD_SMTP_PASSWORD=your-ses-smtp-password\n"
-        )
-        sys.exit(1)
-
     subject = args.subject or f"AICloud Strategist — Daily Status Report — {data['date']}"
     recipients = [addr.strip() for addr in args.to.split(",")]
+    from_email = args.from_email
 
-    print(f"Sending to: {', '.join(recipients)}")
-    success = send_email(config, recipients, subject, html)
+    print(f"Sending via {args.via.upper()} to: {', '.join(recipients)}")
+
+    if args.via == "ses":
+        if not from_email:
+            print("Error: --from-email is required (or set FINXCLOUD_FROM_EMAIL)")
+            sys.exit(1)
+        success = send_email_ses(recipients, subject, html, from_email, region=args.region)
+    else:
+        config = EmailConfig()
+        if not config.is_configured:
+            print(
+                "\nSMTP not configured. Set FINXCLOUD_SMTP_HOST, FINXCLOUD_SMTP_USER, "
+                "FINXCLOUD_SMTP_PASSWORD. Or use --via ses with AWS credentials."
+            )
+            sys.exit(1)
+        success = send_email(config, recipients, subject, html)
+
     if success:
         print("Email sent successfully.")
     else:
