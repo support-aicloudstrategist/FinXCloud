@@ -385,6 +385,8 @@
     <button class="nav-tab active" data-tab="accounts">Accounts</button>
     <button class="nav-tab" data-tab="scan">New Scan</button>
     <button class="nav-tab" data-tab="results" id="resultsTab" style="display:none;">Dashboard</button>
+    <button class="nav-tab" data-tab="schedules">Schedules</button>
+    <button class="nav-tab" data-tab="notifications">Notifications</button>
   </div>
 
   <!-- Tab: Accounts -->
@@ -600,6 +602,130 @@
       </div>
 
     </div>
+  </div>
+
+  <!-- Tab: Schedules -->
+  <div class="tab-content" id="tab-schedules">
+    <div class="scan-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h2 style="font-size:1.1rem;color:var(--gray-700);">Resource Schedules</h2>
+        <button class="btn btn-primary btn-sm" onclick="openScheduleModal()">+ Add Schedule</button>
+      </div>
+      <p style="color:var(--gray-500);font-size:0.85rem;margin-bottom:1rem;">
+        Configure automatic stop/start schedules for EC2 instances to save costs during non-business hours.
+      </p>
+      <div id="scheduleList">
+        <p style="color:var(--gray-500);text-align:center;padding:2rem;">Loading schedules...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Notifications -->
+  <div class="tab-content" id="tab-notifications">
+    <div class="scan-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h2 style="font-size:1.1rem;color:var(--gray-700);">Webhook Notifications</h2>
+        <button class="btn btn-primary btn-sm" onclick="openWebhookModal()">+ Add Webhook</button>
+      </div>
+      <p style="color:var(--gray-500);font-size:0.85rem;margin-bottom:1rem;">
+        Configure Slack or generic HTTP webhooks to receive alerts on scan completions, cost anomalies, and budget thresholds.
+      </p>
+      <div id="webhookList">
+        <p style="color:var(--gray-500);text-align:center;padding:2rem;">Loading webhooks...</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Schedule Modal -->
+<div class="modal-overlay" id="scheduleModal">
+  <div class="modal">
+    <h2 id="scheduleModalTitle">Add Schedule</h2>
+    <form id="scheduleForm">
+      <input type="hidden" id="editScheduleId">
+      <div class="form-group">
+        <label for="schedInstanceId">EC2 Instance ID *</label>
+        <input type="text" id="schedInstanceId" required placeholder="i-0abc123def456">
+      </div>
+      <div class="form-group">
+        <label for="schedRegion">Region</label>
+        <select id="schedRegion">
+          <option value="us-east-1" selected>us-east-1</option>
+          <option value="us-east-2">us-east-2</option>
+          <option value="us-west-1">us-west-1</option>
+          <option value="us-west-2">us-west-2</option>
+          <option value="eu-west-1">eu-west-1</option>
+          <option value="eu-central-1">eu-central-1</option>
+          <option value="ap-south-1">ap-south-1</option>
+          <option value="ap-southeast-1">ap-southeast-1</option>
+          <option value="ap-northeast-1">ap-northeast-1</option>
+        </select>
+      </div>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="form-group">
+          <label for="schedStopTime">Stop Time (UTC) *</label>
+          <input type="time" id="schedStopTime" required value="19:00">
+        </div>
+        <div class="form-group">
+          <label for="schedStartTime">Start Time (UTC) *</label>
+          <input type="time" id="schedStartTime" required value="08:00">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Active Days</label>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.25rem;">
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="mon" checked> Mon</label>
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="tue" checked> Tue</label>
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="wed" checked> Wed</label>
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="thu" checked> Thu</label>
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="fri" checked> Fri</label>
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="sat"> Sat</label>
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="sun"> Sun</label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="closeScheduleModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Schedule</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Webhook Modal -->
+<div class="modal-overlay" id="webhookModal">
+  <div class="modal">
+    <h2 id="webhookModalTitle">Add Webhook</h2>
+    <form id="webhookForm">
+      <input type="hidden" id="editWebhookId">
+      <div class="form-group">
+        <label for="whName">Name</label>
+        <input type="text" id="whName" placeholder="e.g. Slack #cloud-costs">
+      </div>
+      <div class="form-group">
+        <label for="whUrl">Webhook URL *</label>
+        <input type="url" id="whUrl" required placeholder="https://hooks.slack.com/services/...">
+      </div>
+      <div class="form-group">
+        <label for="whType">Type</label>
+        <select id="whType">
+          <option value="slack">Slack</option>
+          <option value="generic">Generic HTTP</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Subscribe to Events</label>
+        <div style="display:flex;flex-direction:column;gap:0.4rem;margin-top:0.25rem;">
+          <label class="checkbox-group"><input type="checkbox" class="wh-event" value="scan_complete" checked> Scan Complete</label>
+          <label class="checkbox-group"><input type="checkbox" class="wh-event" value="anomaly_detected" checked> Anomaly Detected</label>
+          <label class="checkbox-group"><input type="checkbox" class="wh-event" value="budget_threshold" checked> Budget Threshold</label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="closeWebhookModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Webhook</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -1192,6 +1318,222 @@ function esc(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+
+// ===================================================================
+// SCHEDULES
+// ===================================================================
+async function loadSchedules() {
+  try {
+    const res = await fetch('/api/schedules');
+    if (!res.ok) return;
+    const schedules = await res.json();
+    renderScheduleList(schedules);
+  } catch {}
+}
+
+function renderScheduleList(schedules) {
+  const el = document.getElementById('scheduleList');
+  if (!schedules.length) {
+    el.innerHTML = '<p style="color:var(--gray-500);text-align:center;padding:2rem;">No schedules configured. Click "+ Add Schedule" to create one.</p>';
+    return;
+  }
+  let html = '<table><thead><tr><th>Instance</th><th>Region</th><th>Stop</th><th>Start</th><th>Days</th><th>Enabled</th><th>Actions</th></tr></thead><tbody>';
+  for (const s of schedules) {
+    const enabled = s.enabled ? '<span style="color:var(--green);font-weight:600;">Yes</span>' : '<span style="color:var(--red);font-weight:600;">No</span>';
+    html += `<tr>
+      <td><code>${esc(s.instance_id)}</code></td>
+      <td>${esc(s.region)}</td>
+      <td>${esc(s.stop_time)}</td>
+      <td>${esc(s.start_time)}</td>
+      <td>${(s.days||[]).join(', ')}</td>
+      <td>${enabled}</td>
+      <td>
+        <button class="btn btn-sm ${s.enabled ? 'btn-outline' : 'btn-green'}" onclick="toggleSchedule('${s.id}', ${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteSchedule('${s.id}')">Delete</button>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function openScheduleModal() {
+  document.getElementById('editScheduleId').value = '';
+  document.getElementById('scheduleModalTitle').textContent = 'Add Schedule';
+  document.getElementById('schedInstanceId').value = '';
+  document.getElementById('schedRegion').value = 'us-east-1';
+  document.getElementById('schedStopTime').value = '19:00';
+  document.getElementById('schedStartTime').value = '08:00';
+  document.querySelectorAll('.sched-day').forEach(cb => {
+    cb.checked = ['mon','tue','wed','thu','fri'].includes(cb.value);
+  });
+  document.getElementById('scheduleModal').classList.add('show');
+}
+
+function closeScheduleModal() {
+  document.getElementById('scheduleModal').classList.remove('show');
+}
+
+document.getElementById('scheduleForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const days = Array.from(document.querySelectorAll('.sched-day:checked')).map(cb => cb.value);
+  const body = {
+    instance_id: document.getElementById('schedInstanceId').value,
+    region: document.getElementById('schedRegion').value,
+    stop_time: document.getElementById('schedStopTime').value,
+    start_time: document.getElementById('schedStartTime').value,
+    days: days,
+  };
+  try {
+    const res = await fetch('/api/schedules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      closeScheduleModal();
+      loadSchedules();
+    }
+  } catch {}
+});
+
+async function toggleSchedule(id, enabled) {
+  try {
+    await fetch(`/api/schedules/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    loadSchedules();
+  } catch {}
+}
+
+async function deleteSchedule(id) {
+  if (!confirm('Delete this schedule?')) return;
+  try {
+    await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
+    loadSchedules();
+  } catch {}
+}
+
+// ===================================================================
+// WEBHOOKS / NOTIFICATIONS
+// ===================================================================
+async function loadWebhooks() {
+  try {
+    const res = await fetch('/api/webhooks');
+    if (!res.ok) return;
+    const webhooks = await res.json();
+    renderWebhookList(webhooks);
+  } catch {}
+}
+
+function renderWebhookList(webhooks) {
+  const el = document.getElementById('webhookList');
+  if (!webhooks.length) {
+    el.innerHTML = '<p style="color:var(--gray-500);text-align:center;padding:2rem;">No webhooks configured. Click "+ Add Webhook" to create one.</p>';
+    return;
+  }
+  let html = '<table><thead><tr><th>Name</th><th>Type</th><th>Events</th><th>Enabled</th><th>Actions</th></tr></thead><tbody>';
+  for (const w of webhooks) {
+    const enabled = w.enabled ? '<span style="color:var(--green);font-weight:600;">Yes</span>' : '<span style="color:var(--red);font-weight:600;">No</span>';
+    const events = (w.events||[]).map(e => e.replace(/_/g,' ')).join(', ');
+    html += `<tr>
+      <td>${esc(w.name)}</td>
+      <td><span class="badge ${w.type==='slack'?'badge-low':'badge-medium'}">${esc(w.type)}</span></td>
+      <td style="font-size:0.85rem;">${esc(events)}</td>
+      <td>${enabled}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="testWebhook('${w.id}','${esc(w.url)}')">Test</button>
+        <button class="btn btn-sm ${w.enabled ? 'btn-outline' : 'btn-green'}" onclick="toggleWebhook('${w.id}', ${!w.enabled})">${w.enabled ? 'Disable' : 'Enable'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteWebhook('${w.id}')">Delete</button>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function openWebhookModal() {
+  document.getElementById('editWebhookId').value = '';
+  document.getElementById('webhookModalTitle').textContent = 'Add Webhook';
+  document.getElementById('whName').value = '';
+  document.getElementById('whUrl').value = '';
+  document.getElementById('whType').value = 'slack';
+  document.querySelectorAll('.wh-event').forEach(cb => cb.checked = true);
+  document.getElementById('webhookModal').classList.add('show');
+}
+
+function closeWebhookModal() {
+  document.getElementById('webhookModal').classList.remove('show');
+}
+
+document.getElementById('webhookForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const events = Array.from(document.querySelectorAll('.wh-event:checked')).map(cb => cb.value);
+  const body = {
+    name: document.getElementById('whName').value,
+    url: document.getElementById('whUrl').value,
+    type: document.getElementById('whType').value,
+    events: events,
+  };
+  try {
+    const res = await fetch('/api/webhooks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      closeWebhookModal();
+      loadWebhooks();
+    }
+  } catch {}
+});
+
+async function toggleWebhook(id, enabled) {
+  try {
+    await fetch(`/api/webhooks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    loadWebhooks();
+  } catch {}
+}
+
+async function deleteWebhook(id) {
+  if (!confirm('Delete this webhook?')) return;
+  try {
+    await fetch(`/api/webhooks/${id}`, { method: 'DELETE' });
+    loadWebhooks();
+  } catch {}
+}
+
+async function testWebhook(id, url) {
+  try {
+    const res = await fetch('/api/webhooks/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhook_url: url, event: 'scan_complete', data: { message: 'Test notification from FinXCloud' } }),
+    });
+    if (res.ok) {
+      alert('Test notification sent successfully!');
+    } else {
+      const err = await res.json();
+      alert('Test failed: ' + (err.detail || 'Unknown error'));
+    }
+  } catch (e) {
+    alert('Test failed: ' + e.message);
+  }
+}
+
+// Load schedules and webhooks on tab switch
+const origSwitchTab = switchTab;
+switchTab = function(tabName) {
+  origSwitchTab(tabName);
+  if (tabName === 'schedules') loadSchedules();
+  if (tabName === 'notifications') loadWebhooks();
+};
 </script>
 
 </body>

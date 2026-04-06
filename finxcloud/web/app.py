@@ -609,6 +609,161 @@ async def get_budgets(_user: dict = Depends(require_auth)):
     return tracker.get_budgets()
 
 
+# ---------------------------------------------------------------------------
+# Schedules
+# ---------------------------------------------------------------------------
+
+class ScheduleRequest(BaseModel):
+    instance_id: str
+    region: str = "us-east-1"
+    stop_time: str
+    start_time: str
+    days: list[str] = ["mon", "tue", "wed", "thu", "fri"]
+    account_id: str | None = None
+    estimated_monthly_savings: float = 0.0
+
+
+class ScheduleUpdateRequest(BaseModel):
+    stop_time: str | None = None
+    start_time: str | None = None
+    days: list[str] | None = None
+    enabled: bool | None = None
+    estimated_monthly_savings: float | None = None
+
+
+@app.get("/api/schedules")
+async def list_schedules(_user: dict = Depends(require_auth)):
+    from finxcloud.scheduler.scheduler import ScheduleManager
+    mgr = ScheduleManager()
+    return mgr.list_schedules()
+
+
+@app.post("/api/schedules")
+async def create_schedule(req: ScheduleRequest, _user: dict = Depends(require_auth)):
+    from finxcloud.scheduler.scheduler import ScheduleManager
+    mgr = ScheduleManager()
+    entry = mgr.add_schedule(
+        instance_id=req.instance_id,
+        region=req.region,
+        stop_time=req.stop_time,
+        start_time=req.start_time,
+        days=req.days,
+        account_id=req.account_id,
+        estimated_monthly_savings=req.estimated_monthly_savings,
+    )
+    return entry
+
+
+@app.patch("/api/schedules/{schedule_id}")
+async def update_schedule(schedule_id: str, req: ScheduleUpdateRequest, _user: dict = Depends(require_auth)):
+    from finxcloud.scheduler.scheduler import ScheduleManager
+    mgr = ScheduleManager()
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    updated = mgr.update_schedule(schedule_id, **fields)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    return updated
+
+
+@app.delete("/api/schedules/{schedule_id}")
+async def delete_schedule(schedule_id: str, _user: dict = Depends(require_auth)):
+    from finxcloud.scheduler.scheduler import ScheduleManager
+    mgr = ScheduleManager()
+    if not mgr.delete_schedule(schedule_id):
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    return {"status": "ok"}
+
+
+@app.post("/api/schedules/estimate-savings")
+async def estimate_schedule_savings(req: ScheduleRequest, _user: dict = Depends(require_auth)):
+    from finxcloud.scheduler.scheduler import ScheduleManager
+    mgr = ScheduleManager()
+    # Use a default hourly cost estimate for a generic instance
+    hourly_cost = req.estimated_monthly_savings / (730) if req.estimated_monthly_savings > 0 else 0.10
+    savings = mgr.estimate_savings(hourly_cost, req.stop_time, req.start_time, req.days)
+    return {"estimated_monthly_savings": savings, "hourly_cost_used": hourly_cost}
+
+
+# ---------------------------------------------------------------------------
+# Webhooks / Notifications
+# ---------------------------------------------------------------------------
+
+class WebhookRequest(BaseModel):
+    url: str
+    name: str = ""
+    type: str = "generic"
+    events: list[str] = ["scan_complete", "anomaly_detected", "budget_threshold"]
+
+
+class WebhookUpdateRequest(BaseModel):
+    name: str | None = None
+    url: str | None = None
+    type: str | None = None
+    enabled: bool | None = None
+    events: list[str] | None = None
+
+
+class NotifyRequest(BaseModel):
+    webhook_url: str | None = None
+    event: str = "scan_complete"
+    data: dict = {}
+
+
+@app.get("/api/webhooks")
+async def list_webhooks(_user: dict = Depends(require_auth)):
+    from finxcloud.notifications.webhook import WebhookConfig
+    cfg = WebhookConfig()
+    return cfg.list_webhooks()
+
+
+@app.post("/api/webhooks")
+async def create_webhook(req: WebhookRequest, _user: dict = Depends(require_auth)):
+    from finxcloud.notifications.webhook import WebhookConfig
+    cfg = WebhookConfig()
+    entry = cfg.add_webhook(url=req.url, name=req.name, webhook_type=req.type, events=req.events)
+    return entry
+
+
+@app.patch("/api/webhooks/{webhook_id}")
+async def update_webhook(webhook_id: str, req: WebhookUpdateRequest, _user: dict = Depends(require_auth)):
+    from finxcloud.notifications.webhook import WebhookConfig
+    cfg = WebhookConfig()
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    updated = cfg.update_webhook(webhook_id, **fields)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    return updated
+
+
+@app.delete("/api/webhooks/{webhook_id}")
+async def delete_webhook(webhook_id: str, _user: dict = Depends(require_auth)):
+    from finxcloud.notifications.webhook import WebhookConfig
+    cfg = WebhookConfig()
+    if not cfg.delete_webhook(webhook_id):
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    return {"status": "ok"}
+
+
+@app.post("/api/webhooks/test")
+async def test_webhook(req: NotifyRequest, _user: dict = Depends(require_auth)):
+    from finxcloud.notifications.webhook import NotificationSender
+    sender = NotificationSender()
+    if req.webhook_url:
+        result = sender.send_to_url(req.webhook_url, req.event, req.data or {"message": "Test notification from FinXCloud"})
+    else:
+        results = sender.notify(req.event, req.data or {"message": "Test notification from FinXCloud"})
+        if not results:
+            raise HTTPException(status_code=404, detail="No webhooks configured for this event")
+        result = results[0]
+    if result["status"] != "ok":
+        raise HTTPException(status_code=502, detail=result.get("error", "Webhook send failed"))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Merge helper
+# ---------------------------------------------------------------------------
+
 def _merge_cost_data(cost_data_by_account: dict) -> dict:
     """Merge cost data from multiple accounts."""
     if len(cost_data_by_account) == 1:

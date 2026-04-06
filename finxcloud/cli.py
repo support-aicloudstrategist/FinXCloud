@@ -615,5 +615,205 @@ def send_report(
         sys.exit(1)
 
 
+@main.group()
+def schedule() -> None:
+    """Manage EC2 instance start/stop schedules."""
+
+
+@schedule.command("add")
+@click.option("--instance-id", required=True, help="EC2 instance ID.")
+@click.option("--region", default="us-east-1", help="AWS region of the instance.")
+@click.option("--stop-time", required=True, help="Time to stop the instance (HH:MM UTC).")
+@click.option("--start-time", required=True, help="Time to start the instance (HH:MM UTC).")
+@click.option("--days", default="mon,tue,wed,thu,fri", help="Days to apply schedule (comma-separated).")
+@click.option("--account-id", default=None, help="AWS account ID (optional label).")
+def schedule_add(
+    instance_id: str,
+    region: str,
+    stop_time: str,
+    start_time: str,
+    days: str,
+    account_id: str | None,
+) -> None:
+    """Add a new start/stop schedule for an EC2 instance."""
+    from finxcloud.scheduler.scheduler import ScheduleManager
+
+    mgr = ScheduleManager()
+    day_list = [d.strip().lower() for d in days.split(",")]
+    entry = mgr.add_schedule(
+        instance_id=instance_id,
+        region=region,
+        stop_time=stop_time,
+        start_time=start_time,
+        days=day_list,
+        account_id=account_id,
+    )
+    console.print(f"[green]Schedule added:[/green] {entry['id']}")
+    console.print(f"  Instance: {instance_id} ({region})")
+    console.print(f"  Stop at {stop_time} UTC, Start at {start_time} UTC")
+    console.print(f"  Days: {', '.join(day_list)}")
+
+
+@schedule.command("list")
+def schedule_list() -> None:
+    """List all configured schedules."""
+    from finxcloud.scheduler.scheduler import ScheduleManager
+
+    mgr = ScheduleManager()
+    schedules = mgr.list_schedules()
+    if not schedules:
+        console.print("[yellow]No schedules configured.[/yellow]")
+        return
+
+    table = Table(title="Instance Schedules", border_style="blue")
+    table.add_column("ID", style="dim", width=10)
+    table.add_column("Instance")
+    table.add_column("Region")
+    table.add_column("Stop")
+    table.add_column("Start")
+    table.add_column("Days")
+    table.add_column("Enabled")
+
+    for s in schedules:
+        table.add_row(
+            s["id"],
+            s["instance_id"],
+            s["region"],
+            s["stop_time"],
+            s["start_time"],
+            ",".join(s.get("days", [])),
+            "[green]Yes[/green]" if s.get("enabled") else "[red]No[/red]",
+        )
+    console.print(table)
+
+
+@schedule.command("remove")
+@click.argument("schedule_id")
+def schedule_remove(schedule_id: str) -> None:
+    """Remove a schedule by ID."""
+    from finxcloud.scheduler.scheduler import ScheduleManager
+
+    mgr = ScheduleManager()
+    if mgr.delete_schedule(schedule_id):
+        console.print(f"[green]Schedule {schedule_id} removed.[/green]")
+    else:
+        console.print(f"[red]Schedule {schedule_id} not found.[/red]")
+        sys.exit(1)
+
+
+@schedule.command("run")
+@click.option("--access-key", envvar="AWS_ACCESS_KEY_ID", required=True, help="AWS Access Key ID.")
+@click.option("--secret-key", envvar="AWS_SECRET_ACCESS_KEY", required=True, help="AWS Secret Access Key.")
+@click.option("--session-token", envvar="AWS_SESSION_TOKEN", default=None, help="AWS Session Token.")
+@click.option("--region", default="us-east-1", help="Default AWS region.")
+def schedule_run(access_key: str, secret_key: str, session_token: str | None, region: str) -> None:
+    """Execute any schedules that are due right now."""
+    from finxcloud.scheduler.executor import ScheduleExecutor
+
+    creds = AWSCredentials(
+        access_key_id=access_key,
+        secret_access_key=secret_key,
+        session_token=session_token,
+        region=region,
+    )
+    session = create_session(creds)
+    executor = ScheduleExecutor(session)
+    results = executor.execute_due_actions()
+
+    if not results:
+        console.print("[green]No actions due at this time.[/green]")
+        return
+
+    for r in results:
+        status = "[green]OK[/green]" if r["status"] == "ok" else f"[red]{r.get('error', 'failed')}[/red]"
+        console.print(f"  {r['action'].upper()} {r['instance_id']} — {status}")
+
+
+@main.command()
+@click.option("--webhook-url", required=True, help="Webhook URL (Slack or generic HTTP).")
+@click.option("--event", default="scan_complete", type=click.Choice(["scan_complete", "anomaly_detected", "budget_threshold"]),
+              help="Event type to send.")
+@click.option("--message", default=None, help="Custom message text (for testing).")
+def notify(webhook_url: str, event: str, message: str | None) -> None:
+    """Send a test notification to a webhook URL."""
+    from finxcloud.notifications.webhook import NotificationSender
+
+    sender = NotificationSender()
+    data = {"message": message or f"Test notification for event: {event}"}
+
+    console.print(f"[bold blue]Sending {event} notification...[/bold blue]")
+    result = sender.send_to_url(webhook_url, event, data)
+
+    if result["status"] == "ok":
+        console.print(f"[green]  Notification sent successfully (HTTP {result.get('http_status')}).[/green]")
+    else:
+        console.print(f"[red]  Failed: {result.get('error')}[/red]")
+        sys.exit(1)
+
+
+@main.group()
+def webhooks() -> None:
+    """Manage webhook configurations."""
+
+
+@webhooks.command("add")
+@click.option("--url", required=True, help="Webhook URL.")
+@click.option("--name", default="", help="Friendly name for the webhook.")
+@click.option("--type", "wh_type", default="generic", type=click.Choice(["slack", "generic"]), help="Webhook type.")
+@click.option("--events", default="scan_complete,anomaly_detected,budget_threshold",
+              help="Comma-separated events to subscribe to.")
+def webhooks_add(url: str, name: str, wh_type: str, events: str) -> None:
+    """Add a new webhook configuration."""
+    from finxcloud.notifications.webhook import WebhookConfig
+
+    cfg = WebhookConfig()
+    event_list = [e.strip() for e in events.split(",")]
+    entry = cfg.add_webhook(url=url, name=name, webhook_type=wh_type, events=event_list)
+    console.print(f"[green]Webhook added:[/green] {entry['id']} ({entry['name']})")
+
+
+@webhooks.command("list")
+def webhooks_list() -> None:
+    """List all configured webhooks."""
+    from finxcloud.notifications.webhook import WebhookConfig
+
+    cfg = WebhookConfig()
+    hooks = cfg.list_webhooks()
+    if not hooks:
+        console.print("[yellow]No webhooks configured.[/yellow]")
+        return
+
+    table = Table(title="Configured Webhooks", border_style="blue")
+    table.add_column("ID", style="dim", width=10)
+    table.add_column("Name")
+    table.add_column("Type")
+    table.add_column("Events")
+    table.add_column("Enabled")
+
+    for h in hooks:
+        table.add_row(
+            h["id"],
+            h.get("name", ""),
+            h.get("type", "generic"),
+            ", ".join(h.get("events", [])),
+            "[green]Yes[/green]" if h.get("enabled") else "[red]No[/red]",
+        )
+    console.print(table)
+
+
+@webhooks.command("remove")
+@click.argument("webhook_id")
+def webhooks_remove(webhook_id: str) -> None:
+    """Remove a webhook by ID."""
+    from finxcloud.notifications.webhook import WebhookConfig
+
+    cfg = WebhookConfig()
+    if cfg.delete_webhook(webhook_id):
+        console.print(f"[green]Webhook {webhook_id} removed.[/green]")
+    else:
+        console.print(f"[red]Webhook {webhook_id} not found.[/red]")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()
