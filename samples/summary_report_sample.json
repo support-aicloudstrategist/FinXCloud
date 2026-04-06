@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-04-06T12:00:00Z",
+  "overview": {
+    "total_resources": 147,
+    "total_cost_30d": 12847.53,
+    "total_potential_savings": 3241.80,
+    "savings_percentage": 25.2,
+    "quick_wins_count": 8
+  },
+  "top_cost_services": [
+    {"service": "Amazon Elastic Compute Cloud - Compute", "amount": 5420.10},
+    {"service": "Amazon Relational Database Service", "amount": 3100.00},
+    {"service": "Amazon Simple Storage Service", "amount": 1850.25},
+    {"service": "AWS Lambda", "amount": 420.50},
+    {"service": "Amazon Elastic Load Balancing", "amount": 380.00}
+  ],
+  "top_recommendations": [
+    {
+      "id": "rec-001",
+      "category": "compute",
+      "title": "Terminate 3 stopped EC2 instances with attached EBS",
+      "description": "3 EC2 instances have been stopped for >30 days but still incur EBS storage costs.",
+      "estimated_monthly_savings": 450.00,
+      "effort_level": "low",
+      "priority": 1,
+      "well_architected_pillar": "COST-OPT"
+    },
+    {
+      "id": "rec-002",
+      "category": "storage",
+      "title": "Delete 12 unattached EBS volumes (840 GB total)",
+      "description": "12 gp2/gp3 volumes are not attached to any instance.",
+      "estimated_monthly_savings": 84.00,
+      "effort_level": "low",
+      "priority": 1,
+      "well_architected_pillar": "COST-OPT"
+    },
+    {
+      "id": "rec-003",
+      "category": "storage",
+      "title": "Clean up 45 snapshots older than 90 days",
+      "description": "45 EBS snapshots are older than 90 days totaling 2.1 TB.",
+      "estimated_monthly_savings": 107.52,
+      "effort_level": "low",
+      "priority": 2,
+      "well_architected_pillar": "COST-OPT"
+    },
+    {
+      "id": "rec-004",
+      "category": "networking",
+      "title": "Release 5 unused Elastic IPs",
+      "description": "5 EIPs are allocated but not associated with any running instance.",
+      "estimated_monthly_savings": 18.25,
+      "effort_level": "low",
+      "priority": 2,
+      "well_architected_pillar": "COST-OPT"
+    },
+    {
+      "id": "rec-005",
+      "category": "compute",
+      "title": "Right-size 4 over-provisioned EC2 instances",
+      "description": "4 instances show <5% average CPU utilization over 14 days.",
+      "estimated_monthly_savings": 1200.00,
+      "effort_level": "medium",
+      "priority": 1,
+      "well_architected_pillar": "COST-OPT"
+    }
+  ],
+  "savings_by_category": {
+    "compute": 1650.00,
+    "storage": 891.52,
+    "networking": 398.25,
+    "database": 302.03
+  },
+  "quick_wins_count": 8
+}

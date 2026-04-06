@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinXCloud Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --green: #16a34a;
+    --green-bg: #dcfce7;
+    --red: #dc2626;
+    --red-bg: #fee2e2;
+    --orange: #ea580c;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-500: #6b7280;
+    --gray-700: #374151;
+    --gray-900: #111827;
+    --radius: 10px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--gray-900); background: var(--gray-50); line-height: 1.6;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+    color: #fff; padding: 1.5rem 2rem;
+  }
+  .header h1 { font-size: 1.5rem; font-weight: 700; }
+  .header p { font-size: 0.9rem; opacity: 0.85; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+
+  /* Scan Form */
+  .scan-panel {
+    background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 1.5rem; margin-bottom: 1.5rem;
+  }
+  .scan-panel h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--gray-700); }
+  .form-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem; margin-bottom: 1rem;
+  }
+  .form-group label {
+    display: block; font-size: 0.8rem; font-weight: 600;
+    color: var(--gray-700); margin-bottom: 0.25rem;
+  }
+  .form-group input, .form-group select {
+    width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--gray-300);
+    border-radius: 6px; font-size: 0.9rem; outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-group input:focus { border-color: var(--primary); }
+  .checkbox-group {
+    display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;
+  }
+  .checkbox-group input { width: auto; }
+  .checkbox-group label { font-size: 0.85rem; margin-bottom: 0; }
+
+  .btn {
+    padding: 0.6rem 1.5rem; border: none; border-radius: 6px;
+    font-size: 0.95rem; font-weight: 600; cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-primary:disabled { background: var(--gray-300); cursor: not-allowed; }
+
+  /* Progress */
+  .progress-bar {
+    display: none; margin-top: 1rem; padding: 0.75rem 1rem;
+    background: #eff6ff; border-radius: 6px; font-size: 0.9rem; color: var(--primary);
+  }
+  .progress-bar.show { display: flex; align-items: center; gap: 0.75rem; }
+  .spinner {
+    width: 18px; height: 18px; border: 3px solid var(--gray-200);
+    border-top-color: var(--primary); border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-msg {
+    display: none; margin-top: 0.75rem; padding: 0.75rem 1rem;
+    background: var(--red-bg); border-radius: 6px; color: var(--red); font-size: 0.9rem;
+  }
+  .error-msg.show { display: block; }
+
+  /* Dashboard (hidden until results) */
+  #dashboard { display: none; }
+  #dashboard.show { display: block; }
+
+  /* Metric cards */
+  .metrics {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem; margin-bottom: 1.5rem;
+  }
+  .card {
+    background: #fff; border-radius: var(--radius); padding: 1.25rem;
+    box-shadow: var(--shadow);
+  }
+  .card .label { font-size: 0.8rem; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.04em; }
+  .card .value { font-size: 1.6rem; font-weight: 700; margin-top: 0.25rem; }
+  .card .value.cost { color: var(--red); }
+  .card .value.savings { color: var(--green); }
+
+  /* Chart panels */
+  .chart-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 1.5rem; margin-bottom: 1.5rem;
+  }
+  .chart-panel {
+    background: #fff; border-radius: var(--radius); padding: 1.25rem;
+    box-shadow: var(--shadow);
+  }
+  .chart-panel h3 { font-size: 1rem; color: var(--gray-700); margin-bottom: 0.75rem; }
+  .chart-panel canvas { max-height: 300px; }
+
+  /* Tables */
+  .table-panel {
+    background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
+    overflow: hidden; margin-bottom: 1.5rem;
+  }
+  .table-panel h3 {
+    font-size: 1rem; color: var(--gray-700); padding: 1rem 1.25rem 0.5rem;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.6rem 1rem; font-size: 0.9rem; }
+  th {
+    background: var(--gray-100); font-size: 0.78rem; text-transform: uppercase;
+    color: var(--gray-500); letter-spacing: 0.04em; font-weight: 600;
+  }
+  tr:not(:last-child) td { border-bottom: 1px solid var(--gray-200); }
+  .amount-cost { color: var(--red); font-weight: 600; }
+  .amount-savings { color: var(--green); font-weight: 600; }
+
+  /* Effort badges */
+  .badge {
+    display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+    font-size: 0.75rem; font-weight: 600;
+  }
+  .badge-low { background: var(--green-bg); color: var(--green); }
+  .badge-medium { background: #fef3c7; color: var(--orange); }
+  .badge-high { background: var(--red-bg); color: var(--red); }
+
+  /* Roadmap */
+  .roadmap-phase {
+    background: #fff; border-radius: var(--radius); padding: 1.25rem;
+    box-shadow: var(--shadow); margin-bottom: 1rem;
+  }
+  .roadmap-phase .phase-head {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;
+  }
+  .roadmap-phase h4 { font-size: 1rem; }
+  .roadmap-phase .phase-meta { font-size: 0.85rem; color: var(--gray-500); }
+
+  @media (max-width: 640px) {
+    .container { padding: 0.75rem; }
+    .chart-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>FinXCloud Dashboard</h1>
+  <p>AWS Cost Optimization Tool</p>
+</div>
+
+<div class="container">
+
+  <!-- Scan Form -->
+  <div class="scan-panel">
+    <h2>Run a New Scan</h2>
+    <form id="scanForm">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="accessKey">AWS Access Key ID *</label>
+          <input type="text" id="accessKey" required placeholder="AKIA...">
+        </div>
+        <div class="form-group">
+          <label for="secretKey">AWS Secret Access Key *</label>
+          <input type="password" id="secretKey" required placeholder="Secret key">
+        </div>
+        <div class="form-group">
+          <label for="sessionToken">Session Token (optional)</label>
+          <input type="text" id="sessionToken" placeholder="Optional">
+        </div>
+        <div class="form-group">
+          <label for="region">Default Region</label>
+          <select id="region">
+            <option value="us-east-1" selected>us-east-1</option>
+            <option value="us-east-2">us-east-2</option>
+            <option value="us-west-1">us-west-1</option>
+            <option value="us-west-2">us-west-2</option>
+            <option value="eu-west-1">eu-west-1</option>
+            <option value="eu-central-1">eu-central-1</option>
+            <option value="ap-south-1">ap-south-1</option>
+            <option value="ap-southeast-1">ap-southeast-1</option>
+            <option value="ap-northeast-1">ap-northeast-1</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="regions">Regions to Scan (comma-separated, blank=all)</label>
+          <input type="text" id="regions" placeholder="e.g. us-east-1,eu-west-1">
+        </div>
+        <div class="form-group">
+          <label for="days">Lookback Period (days)</label>
+          <input type="number" id="days" value="30" min="1" max="365">
+        </div>
+      </div>
+      <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;">
+        <div class="checkbox-group">
+          <input type="checkbox" id="orgScan">
+          <label for="orgScan">Scan all Organization accounts</label>
+        </div>
+        <div class="checkbox-group">
+          <input type="checkbox" id="skipUtil">
+          <label for="skipUtil">Skip utilization checks (faster)</label>
+        </div>
+        <button type="submit" class="btn btn-primary" id="scanBtn">Start Scan</button>
+      </div>
+    </form>
+    <div class="progress-bar" id="progressBar">
+      <div class="spinner"></div>
+      <span id="progressText">Initializing...</span>
+    </div>
+    <div class="error-msg" id="errorMsg"></div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard">
+
+    <!-- Metric Cards -->
+    <div class="metrics">
+      <div class="card">
+        <div class="label">Total Resources</div>
+        <div class="value" id="metricResources">0</div>
+      </div>
+      <div class="card">
+        <div class="label">30-Day Cost</div>
+        <div class="value cost" id="metricCost">$0.00</div>
+      </div>
+      <div class="card">
+        <div class="label">Potential Savings</div>
+        <div class="value savings" id="metricSavings">$0.00</div>
+      </div>
+      <div class="card">
+        <div class="label">Savings Potential</div>
+        <div class="value savings" id="metricSavingsPct">0%</div>
+      </div>
+      <div class="card">
+        <div class="label">Quick Wins</div>
+        <div class="value" id="metricQuickWins">0</div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="chart-grid">
+      <div class="chart-panel">
+        <h3>Cost by Service</h3>
+        <canvas id="chartService"></canvas>
+      </div>
+      <div class="chart-panel">
+        <h3>Cost by Region</h3>
+        <canvas id="chartRegion"></canvas>
+      </div>
+      <div class="chart-panel">
+        <h3>Daily Cost Trend</h3>
+        <canvas id="chartTrend"></canvas>
+      </div>
+      <div class="chart-panel">
+        <h3>Savings by Category</h3>
+        <canvas id="chartSavings"></canvas>
+      </div>
+    </div>
+
+    <!-- Recommendations -->
+    <div class="table-panel">
+      <h3>Top Recommendations</h3>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Category</th><th>Recommendation</th><th>Effort</th><th>Est. Savings/mo</th></tr>
+        </thead>
+        <tbody id="recsBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Resource Inventory -->
+    <div class="table-panel">
+      <h3>Resource Inventory</h3>
+      <table>
+        <thead>
+          <tr><th>Resource Type</th><th>Count</th></tr>
+        </thead>
+        <tbody id="resourcesBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Roadmap -->
+    <div id="roadmapSection">
+      <h3 style="margin-bottom:0.75rem;color:var(--gray-700);">Implementation Roadmap</h3>
+      <div id="roadmapCards"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const COLORS = [
+  '#2563eb','#16a34a','#ea580c','#9333ea','#dc2626',
+  '#0891b2','#ca8a04','#4f46e5','#db2777','#059669'
+];
+
+let chartInstances = {};
+
+document.getElementById('scanForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('scanBtn');
+  const progress = document.getElementById('progressBar');
+  const errorEl = document.getElementById('errorMsg');
+
+  btn.disabled = true;
+  progress.classList.add('show');
+  errorEl.classList.remove('show');
+  document.getElementById('dashboard').classList.remove('show');
+
+  const body = {
+    access_key: document.getElementById('accessKey').value,
+    secret_key: document.getElementById('secretKey').value,
+    session_token: document.getElementById('sessionToken').value || null,
+    region: document.getElementById('region').value,
+    regions: document.getElementById('regions').value || null,
+    days: parseInt(document.getElementById('days').value) || 30,
+    org_scan: document.getElementById('orgScan').checked,
+    skip_utilization: document.getElementById('skipUtil').checked,
+  };
+
+  try {
+    const startRes = await fetch('/api/scan', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const startData = await startRes.json();
+    const scanId = startData.scan_id;
+
+    // Poll for status
+    while (true) {
+      await new Promise(r => setTimeout(r, 2000));
+      const statusRes = await fetch(`/api/scan/${scanId}`);
+      const statusData = await statusRes.json();
+      document.getElementById('progressText').textContent = statusData.progress || 'Working...';
+
+      if (statusData.status === 'done') {
+        const resultsRes = await fetch(`/api/scan/${scanId}/results`);
+        const results = await resultsRes.json();
+        renderDashboard(results);
+        progress.classList.remove('show');
+        break;
+      }
+      if (statusData.status === 'failed') {
+        throw new Error(statusData.error || 'Scan failed');
+      }
+    }
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.add('show');
+    progress.classList.remove('show');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function renderDashboard(data) {
+  const { summary, detailed, roadmap, recommendations } = data;
+  const ov = summary.overview;
+
+  // Metrics
+  document.getElementById('metricResources').textContent = ov.total_resources.toLocaleString();
+  document.getElementById('metricCost').textContent = '$' + ov.total_cost_30d.toFixed(2);
+  document.getElementById('metricSavings').textContent = '$' + ov.total_potential_savings.toFixed(2);
+  document.getElementById('metricSavingsPct').textContent = ov.savings_percentage + '%';
+  document.getElementById('metricQuickWins').textContent = summary.quick_wins_count;
+
+  // Charts
+  renderServiceChart(detailed.cost_breakdown.by_service);
+  renderRegionChart(detailed.cost_breakdown.by_region);
+  renderTrendChart(detailed.cost_breakdown.daily_trend);
+  renderSavingsChart(summary.savings_by_category);
+
+  // Recommendations table
+  const recsBody = document.getElementById('recsBody');
+  recsBody.innerHTML = '';
+  (summary.top_recommendations || []).forEach((rec, i) => {
+    const effortClass = rec.effort_level === 'low' ? 'badge-low' :
+                        rec.effort_level === 'medium' ? 'badge-medium' : 'badge-high';
+    recsBody.innerHTML += `<tr>
+      <td>${i+1}</td>
+      <td>${rec.category || ''}</td>
+      <td>${rec.title || ''}</td>
+      <td><span class="badge ${effortClass}">${rec.effort_level || ''}</span></td>
+      <td class="amount-savings">$${(rec.estimated_monthly_savings || 0).toFixed(2)}</td>
+    </tr>`;
+  });
+
+  // Resource inventory
+  const resBody = document.getElementById('resourcesBody');
+  resBody.innerHTML = '';
+  const counts = detailed.resource_counts || {};
+  Object.entries(counts).sort((a,b) => b[1]-a[1]).forEach(([type, count]) => {
+    resBody.innerHTML += `<tr><td>${type}</td><td>${count}</td></tr>`;
+  });
+
+  // Roadmap
+  const roadmapCards = document.getElementById('roadmapCards');
+  roadmapCards.innerHTML = '';
+  (roadmap.phases || []).forEach(phase => {
+    roadmapCards.innerHTML += `<div class="roadmap-phase">
+      <div class="phase-head">
+        <h4>Phase ${phase.phase}: ${phase.name}</h4>
+        <span class="badge badge-low">$${phase.total_estimated_monthly_savings.toFixed(2)} savings/mo</span>
+      </div>
+      <p class="phase-meta">${phase.item_count} item${phase.item_count!==1?'s':''} &middot; Timeline: ${phase.timeline} &middot; Effort: ${phase.effort_level}</p>
+    </div>`;
+  });
+
+  document.getElementById('dashboard').classList.add('show');
+}
+
+function destroyChart(key) {
+  if (chartInstances[key]) { chartInstances[key].destroy(); }
+}
+
+function renderServiceChart(byService) {
+  destroyChart('service');
+  const top = byService.slice(0, 8);
+  chartInstances['service'] = new Chart(document.getElementById('chartService'), {
+    type: 'doughnut',
+    data: {
+      labels: top.map(s => s.service),
+      datasets: [{ data: top.map(s => s.amount), backgroundColor: COLORS }],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => `$${ctx.parsed.toFixed(2)}` } },
+      },
+    },
+  });
+}
+
+function renderRegionChart(byRegion) {
+  destroyChart('region');
+  const top = byRegion.slice(0, 8);
+  chartInstances['region'] = new Chart(document.getElementById('chartRegion'), {
+    type: 'bar',
+    data: {
+      labels: top.map(r => r.region || r.service || 'N/A'),
+      datasets: [{
+        label: 'Cost (USD)', data: top.map(r => r.amount),
+        backgroundColor: '#2563eb88', borderColor: '#2563eb', borderWidth: 1,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => '$' + v.toFixed(0) } },
+        x: { ticks: { font: { size: 10 } } },
+      },
+    },
+  });
+}
+
+function renderTrendChart(dailyTrend) {
+  destroyChart('trend');
+  chartInstances['trend'] = new Chart(document.getElementById('chartTrend'), {
+    type: 'line',
+    data: {
+      labels: dailyTrend.map(d => d.date),
+      datasets: [{
+        label: 'Daily Cost (USD)', data: dailyTrend.map(d => d.amount),
+        borderColor: '#2563eb', backgroundColor: '#2563eb22',
+        fill: true, tension: 0.3, pointRadius: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => '$' + v.toFixed(0) } },
+        x: { ticks: { maxTicksLimit: 10, font: { size: 10 } } },
+      },
+    },
+  });
+}
+
+function renderSavingsChart(savingsByCat) {
+  destroyChart('savings');
+  chartInstances['savings'] = new Chart(document.getElementById('chartSavings'), {
+    type: 'bar',
+    data: {
+      labels: savingsByCat.map(c => c.category),
+      datasets: [{
+        label: 'Est. Savings/mo', data: savingsByCat.map(c => c.estimated_monthly_savings),
+        backgroundColor: '#16a34a88', borderColor: '#16a34a', borderWidth: 1,
+      }],
+    },
+    options: {
+      indexAxis: 'y', responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { callback: v => '$' + v.toFixed(0) } } },
+    },
+  });
+}
+</script>
+
+</body>
+</html>
