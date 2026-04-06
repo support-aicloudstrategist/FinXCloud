@@ -1,4 +1,7 @@
-"""SQLite-based storage for AWS accounts and scan results (PoC)."""
+"""SQLite-based storage for cloud accounts and scan results (PoC).
+
+Supports AWS, Azure, and GCP accounts with encrypted credential storage.
+"""
 
 from __future__ import annotations
 
@@ -51,11 +54,13 @@ def _init_tables(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS accounts (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            access_key_enc TEXT NOT NULL,
-            secret_key_enc TEXT NOT NULL,
+            provider TEXT NOT NULL DEFAULT 'aws',
+            access_key_enc TEXT NOT NULL DEFAULT '',
+            secret_key_enc TEXT NOT NULL DEFAULT '',
             region TEXT NOT NULL DEFAULT 'us-east-1',
             role_arn TEXT,
             org_scan INTEGER NOT NULL DEFAULT 0,
+            credentials_json_enc TEXT DEFAULT '',
             created_at TEXT NOT NULL,
             last_scan_at TEXT
         );
@@ -69,6 +74,15 @@ def _init_tables(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    # Add provider and credentials_json_enc columns if missing (migration)
+    try:
+        conn.execute("SELECT provider FROM accounts LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE accounts ADD COLUMN provider TEXT NOT NULL DEFAULT 'aws'")
+    try:
+        conn.execute("SELECT credentials_json_enc FROM accounts LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE accounts ADD COLUMN credentials_json_enc TEXT DEFAULT ''")
     conn.commit()
 
 
@@ -86,7 +100,7 @@ def _decrypt(ciphertext: str) -> str:
 
 def list_accounts() -> list[dict]:
     rows = _conn().execute(
-        "SELECT id, name, region, role_arn, org_scan, created_at, last_scan_at FROM accounts ORDER BY name"
+        "SELECT id, name, provider, region, role_arn, org_scan, created_at, last_scan_at FROM accounts ORDER BY name"
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -96,32 +110,52 @@ def get_account(account_id: str) -> dict | None:
     if not row:
         return None
     d = dict(row)
-    d["access_key"] = _decrypt(d.pop("access_key_enc"))
-    d["secret_key"] = _decrypt(d.pop("secret_key_enc"))
+    # Decrypt AWS keys
+    ak = d.pop("access_key_enc", "")
+    sk = d.pop("secret_key_enc", "")
+    d["access_key"] = _decrypt(ak) if ak else ""
+    d["secret_key"] = _decrypt(sk) if sk else ""
+    # Decrypt provider-specific credentials JSON
+    creds_enc = d.pop("credentials_json_enc", "")
+    if creds_enc:
+        d["credentials"] = json.loads(_decrypt(creds_enc))
+    else:
+        d["credentials"] = {}
     return d
 
 
 def create_account(
     name: str,
-    access_key: str,
-    secret_key: str,
+    access_key: str = "",
+    secret_key: str = "",
     region: str = "us-east-1",
     role_arn: str | None = None,
     org_scan: bool = False,
+    provider: str = "aws",
+    credentials: dict | None = None,
 ) -> dict:
     account_id = str(uuid.uuid4())[:8]
     now = datetime.now(timezone.utc).isoformat()
+    creds_enc = _encrypt(json.dumps(credentials)) if credentials else ""
     _conn().execute(
-        "INSERT INTO accounts (id, name, access_key_enc, secret_key_enc, region, role_arn, org_scan, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (account_id, name, _encrypt(access_key), _encrypt(secret_key), region, role_arn, int(org_scan), now),
+        "INSERT INTO accounts (id, name, provider, access_key_enc, secret_key_enc, region, role_arn, org_scan, credentials_json_enc, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            account_id, name, provider,
+            _encrypt(access_key) if access_key else "",
+            _encrypt(secret_key) if secret_key else "",
+            region, role_arn, int(org_scan), creds_enc, now,
+        ),
     )
     _conn().commit()
-    return {"id": account_id, "name": name, "region": region, "role_arn": role_arn, "org_scan": org_scan, "created_at": now}
+    return {
+        "id": account_id, "name": name, "provider": provider,
+        "region": region, "role_arn": role_arn, "org_scan": org_scan, "created_at": now,
+    }
 
 
 def update_account(account_id: str, **fields) -> bool:
-    allowed = {"name", "access_key", "secret_key", "region", "role_arn", "org_scan"}
+    allowed = {"name", "access_key", "secret_key", "region", "role_arn", "org_scan", "provider", "credentials"}
     sets = []
     vals = []
     for k, v in fields.items():
@@ -129,10 +163,13 @@ def update_account(account_id: str, **fields) -> bool:
             continue
         if k == "access_key":
             sets.append("access_key_enc = ?")
-            vals.append(_encrypt(v))
+            vals.append(_encrypt(v) if v else "")
         elif k == "secret_key":
             sets.append("secret_key_enc = ?")
-            vals.append(_encrypt(v))
+            vals.append(_encrypt(v) if v else "")
+        elif k == "credentials":
+            sets.append("credentials_json_enc = ?")
+            vals.append(_encrypt(json.dumps(v)) if v else "")
         elif k == "org_scan":
             sets.append("org_scan = ?")
             vals.append(int(v))

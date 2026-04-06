@@ -287,7 +287,7 @@
 <!-- Add Account Modal -->
 <div class="modal-overlay" id="addAccountModal">
   <div class="modal">
-    <h2 id="accountModalTitle">Add AWS Account</h2>
+    <h2 id="accountModalTitle">Add Cloud Account</h2>
     <form id="accountForm">
       <input type="hidden" id="editAccountId">
       <div class="form-group">
@@ -295,34 +295,97 @@
         <input type="text" id="acctName" required placeholder="e.g. Production">
       </div>
       <div class="form-group">
-        <label for="acctAccessKey">AWS Access Key ID *</label>
-        <input type="text" id="acctAccessKey" required placeholder="AKIA...">
-      </div>
-      <div class="form-group">
-        <label for="acctSecretKey">AWS Secret Access Key *</label>
-        <input type="password" id="acctSecretKey" required placeholder="Secret key">
-      </div>
-      <div class="form-group">
-        <label for="acctRegion">Default Region</label>
-        <select id="acctRegion">
-          <option value="us-east-1" selected>us-east-1</option>
-          <option value="us-east-2">us-east-2</option>
-          <option value="us-west-1">us-west-1</option>
-          <option value="us-west-2">us-west-2</option>
-          <option value="eu-west-1">eu-west-1</option>
-          <option value="eu-central-1">eu-central-1</option>
-          <option value="ap-south-1">ap-south-1</option>
-          <option value="ap-southeast-1">ap-southeast-1</option>
-          <option value="ap-northeast-1">ap-northeast-1</option>
+        <label for="acctProvider">Cloud Provider *</label>
+        <select id="acctProvider" onchange="toggleProviderFields()">
+          <option value="aws" selected>Amazon Web Services (AWS)</option>
+          <option value="azure">Microsoft Azure</option>
+          <option value="gcp">Google Cloud Platform (GCP)</option>
         </select>
       </div>
-      <div class="form-group">
-        <label for="acctRoleArn">IAM Role ARN (optional, for cross-account)</label>
-        <input type="text" id="acctRoleArn" placeholder="arn:aws:iam::123456789012:role/RoleName">
+      <!-- AWS Fields -->
+      <div id="awsFields">
+        <div class="form-group">
+          <label for="acctAccessKey">AWS Access Key ID *</label>
+          <input type="text" id="acctAccessKey" placeholder="AKIA...">
+        </div>
+        <div class="form-group">
+          <label for="acctSecretKey">AWS Secret Access Key *</label>
+          <input type="password" id="acctSecretKey" placeholder="Secret key">
+        </div>
+        <div class="form-group">
+          <label for="acctRegion">Default Region</label>
+          <select id="acctRegion">
+            <option value="us-east-1" selected>us-east-1</option>
+            <option value="us-east-2">us-east-2</option>
+            <option value="us-west-1">us-west-1</option>
+            <option value="us-west-2">us-west-2</option>
+            <option value="eu-west-1">eu-west-1</option>
+            <option value="eu-central-1">eu-central-1</option>
+            <option value="ap-south-1">ap-south-1</option>
+            <option value="ap-southeast-1">ap-southeast-1</option>
+            <option value="ap-northeast-1">ap-northeast-1</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="acctRoleArn">IAM Role ARN (optional, for cross-account)</label>
+          <input type="text" id="acctRoleArn" placeholder="arn:aws:iam::123456789012:role/RoleName">
+        </div>
+        <div class="checkbox-group">
+          <input type="checkbox" id="acctOrgScan">
+          <label for="acctOrgScan">Scan all Organization accounts</label>
+        </div>
       </div>
-      <div class="checkbox-group">
-        <input type="checkbox" id="acctOrgScan">
-        <label for="acctOrgScan">Scan all Organization accounts</label>
+      <!-- Azure Fields -->
+      <div id="azureFields" style="display:none;">
+        <div class="form-group">
+          <label for="acctAzureSubscriptionId">Subscription ID *</label>
+          <input type="text" id="acctAzureSubscriptionId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+        </div>
+        <div class="form-group">
+          <label for="acctAzureTenantId">Tenant ID</label>
+          <input type="text" id="acctAzureTenantId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+        </div>
+        <div class="form-group">
+          <label for="acctAzureClientId">Client ID (App Registration)</label>
+          <input type="text" id="acctAzureClientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+        </div>
+        <div class="form-group">
+          <label for="acctAzureClientSecret">Client Secret</label>
+          <input type="password" id="acctAzureClientSecret" placeholder="Service Principal secret">
+        </div>
+        <div class="form-group">
+          <label for="acctAzureRegion">Default Region</label>
+          <select id="acctAzureRegion">
+            <option value="eastus" selected>East US</option>
+            <option value="westus2">West US 2</option>
+            <option value="westeurope">West Europe</option>
+            <option value="northeurope">North Europe</option>
+            <option value="centralindia">Central India</option>
+            <option value="southeastasia">Southeast Asia</option>
+          </select>
+        </div>
+      </div>
+      <!-- GCP Fields -->
+      <div id="gcpFields" style="display:none;">
+        <div class="form-group">
+          <label for="acctGcpProjectId">Project ID *</label>
+          <input type="text" id="acctGcpProjectId" placeholder="my-project-123">
+        </div>
+        <div class="form-group">
+          <label for="acctGcpServiceAccountJson">Service Account JSON Key</label>
+          <textarea id="acctGcpServiceAccountJson" rows="4" placeholder='Paste service account JSON key here...' style="font-family:monospace;font-size:0.85rem;"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="acctGcpRegion">Default Region</label>
+          <select id="acctGcpRegion">
+            <option value="us-central1" selected>us-central1</option>
+            <option value="us-east1">us-east1</option>
+            <option value="us-west1">us-west1</option>
+            <option value="europe-west1">europe-west1</option>
+            <option value="asia-south1">asia-south1</option>
+            <option value="asia-southeast1">asia-southeast1</option>
+          </select>
+        </div>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-outline" onclick="closeAccountModal()">Cancel</button>
@@ -375,7 +438,7 @@
       <button class="btn-logout" id="logoutBtn">Logout</button>
     </span>
   </h1>
-  <p>AWS Cost Optimization Tool</p>
+  <p>Multi-Cloud Cost Optimization Tool (AWS | Azure | GCP)</p>
 </div>
 
 <div class="container">
@@ -845,9 +908,14 @@ function renderAccountGrid(accounts) {
     grid.innerHTML = '<p style="color:var(--gray-500);grid-column:1/-1;text-align:center;padding:2rem;">No accounts yet. Click "Add Account" to get started.</p>';
     return;
   }
+  const providerBadge = (p) => {
+    const colors = {aws: '#ff9900', azure: '#0078d4', gcp: '#4285f4'};
+    const labels = {aws: 'AWS', azure: 'Azure', gcp: 'GCP'};
+    return `<span style="background:${colors[p]||'#666'};color:#fff;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;">${labels[p]||p}</span>`;
+  };
   grid.innerHTML = accounts.map(a => `
     <div class="account-card">
-      <div class="acct-name">${esc(a.name)}</div>
+      <div class="acct-name">${providerBadge(a.provider || 'aws')} ${esc(a.name)}</div>
       <div class="acct-meta">Region: ${esc(a.region)}${a.role_arn ? ' | IAM Role' : ''}${a.org_scan ? ' | Org Scan' : ''}</div>
       <div class="acct-meta">Last scan: ${a.last_scan_at ? new Date(a.last_scan_at).toLocaleString() : 'Never'}</div>
       <div class="acct-actions">
@@ -863,7 +931,8 @@ function populateAccountSelect(accounts) {
   const sel = document.getElementById('scanAccountSelect');
   sel.innerHTML = '<option value="">-- Enter credentials manually --</option>';
   accounts.forEach(a => {
-    sel.innerHTML += `<option value="${a.id}">${esc(a.name)} (${a.region})</option>`;
+    const pLabel = {aws:'AWS',azure:'Azure',gcp:'GCP'}[a.provider||'aws']||a.provider;
+    sel.innerHTML += `<option value="${a.id}">[${pLabel}] ${esc(a.name)} (${a.region})</option>`;
   });
 }
 
@@ -879,10 +948,18 @@ document.getElementById('scanAccountSelect').addEventListener('change', function
   }
 });
 
+function toggleProviderFields() {
+  const provider = document.getElementById('acctProvider').value;
+  document.getElementById('awsFields').style.display = provider === 'aws' ? '' : 'none';
+  document.getElementById('azureFields').style.display = provider === 'azure' ? '' : 'none';
+  document.getElementById('gcpFields').style.display = provider === 'gcp' ? '' : 'none';
+}
+
 function openAddAccountModal() {
   document.getElementById('editAccountId').value = '';
-  document.getElementById('accountModalTitle').textContent = 'Add AWS Account';
+  document.getElementById('accountModalTitle').textContent = 'Add Cloud Account';
   document.getElementById('accountForm').reset();
+  toggleProviderFields();
   document.getElementById('addAccountModal').classList.add('show');
 }
 
@@ -893,14 +970,29 @@ function closeAccountModal() {
 document.getElementById('accountForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const editId = document.getElementById('editAccountId').value;
+  const provider = document.getElementById('acctProvider').value;
   const body = {
     name: document.getElementById('acctName').value,
-    access_key: document.getElementById('acctAccessKey').value,
-    secret_key: document.getElementById('acctSecretKey').value,
-    region: document.getElementById('acctRegion').value,
-    role_arn: document.getElementById('acctRoleArn').value || null,
-    org_scan: document.getElementById('acctOrgScan').checked,
+    provider: provider,
   };
+
+  if (provider === 'aws') {
+    body.access_key = document.getElementById('acctAccessKey').value;
+    body.secret_key = document.getElementById('acctSecretKey').value;
+    body.region = document.getElementById('acctRegion').value;
+    body.role_arn = document.getElementById('acctRoleArn').value || null;
+    body.org_scan = document.getElementById('acctOrgScan').checked;
+  } else if (provider === 'azure') {
+    body.azure_subscription_id = document.getElementById('acctAzureSubscriptionId').value;
+    body.azure_tenant_id = document.getElementById('acctAzureTenantId').value || null;
+    body.azure_client_id = document.getElementById('acctAzureClientId').value || null;
+    body.azure_client_secret = document.getElementById('acctAzureClientSecret').value || null;
+    body.region = document.getElementById('acctAzureRegion').value;
+  } else if (provider === 'gcp') {
+    body.gcp_project_id = document.getElementById('acctGcpProjectId').value;
+    body.gcp_service_account_json = document.getElementById('acctGcpServiceAccountJson').value || null;
+    body.region = document.getElementById('acctGcpRegion').value;
+  }
 
   try {
     let res;

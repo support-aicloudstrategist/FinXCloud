@@ -62,8 +62,9 @@ class LoginRequest(BaseModel):
 
 
 class ScanRequest(BaseModel):
-    access_key: str
-    secret_key: str
+    provider: str = "aws"
+    access_key: str = ""
+    secret_key: str = ""
     session_token: str | None = None
     region: str = "us-east-1"
     role_arn: str | None = None
@@ -76,24 +77,48 @@ class ScanRequest(BaseModel):
     output_s3_prefix: str = ""
     stored_account_id: str | None = None
     allocation_tags: str | None = None
+    # Azure fields
+    azure_tenant_id: str | None = None
+    azure_client_id: str | None = None
+    azure_client_secret: str | None = None
+    azure_subscription_id: str | None = None
+    # GCP fields
+    gcp_project_id: str | None = None
+    gcp_service_account_json: str | None = None
 
 
 class AccountRequest(BaseModel):
     name: str
-    access_key: str
-    secret_key: str
+    provider: str = "aws"
+    access_key: str = ""
+    secret_key: str = ""
     region: str = "us-east-1"
     role_arn: str | None = None
     org_scan: bool = False
+    # Azure fields
+    azure_tenant_id: str | None = None
+    azure_client_id: str | None = None
+    azure_client_secret: str | None = None
+    azure_subscription_id: str | None = None
+    # GCP fields
+    gcp_project_id: str | None = None
+    gcp_service_account_json: str | None = None
 
 
 class AccountUpdateRequest(BaseModel):
     name: str | None = None
+    provider: str | None = None
     access_key: str | None = None
     secret_key: str | None = None
     region: str | None = None
     role_arn: str | None = None
     org_scan: bool | None = None
+    azure_tenant_id: str | None = None
+    azure_client_id: str | None = None
+    azure_client_secret: str | None = None
+    azure_subscription_id: str | None = None
+    gcp_project_id: str | None = None
+    gcp_service_account_json: str | None = None
 
 
 class EmailReportRequest(BaseModel):
@@ -152,6 +177,19 @@ async def api_list_accounts(_user: dict = Depends(require_auth)):
 
 @app.post("/api/accounts")
 async def api_create_account(req: AccountRequest, _user: dict = Depends(require_auth)):
+    provider_creds = {}
+    if req.provider == "azure":
+        provider_creds = {
+            "tenant_id": req.azure_tenant_id or "",
+            "client_id": req.azure_client_id or "",
+            "client_secret": req.azure_client_secret or "",
+            "subscription_id": req.azure_subscription_id or "",
+        }
+    elif req.provider == "gcp":
+        provider_creds = {
+            "project_id": req.gcp_project_id or "",
+            "service_account_json": req.gcp_service_account_json or "",
+        }
     acct = create_account(
         name=req.name,
         access_key=req.access_key,
@@ -159,6 +197,8 @@ async def api_create_account(req: AccountRequest, _user: dict = Depends(require_
         region=req.region,
         role_arn=req.role_arn,
         org_scan=req.org_scan,
+        provider=req.provider,
+        credentials=provider_creds if provider_creds else None,
     )
     return acct
 
@@ -169,8 +209,16 @@ async def api_get_account(account_id: str, _user: dict = Depends(require_auth)):
     if not acct:
         raise HTTPException(status_code=404, detail="Account not found")
     # Mask secrets in response
-    acct["access_key"] = acct["access_key"][:4] + "****" + acct["access_key"][-4:]
+    ak = acct.get("access_key", "")
+    acct["access_key"] = (ak[:4] + "****" + ak[-4:]) if len(ak) > 8 else "****"
     acct["secret_key"] = "****"
+    # Mask provider-specific credentials
+    creds = acct.get("credentials", {})
+    if creds:
+        for secret_key in ("client_secret", "service_account_json"):
+            if secret_key in creds and creds[secret_key]:
+                creds[secret_key] = "****"
+        acct["credentials"] = creds
     return acct
 
 
@@ -217,11 +265,22 @@ async def start_scan(req: ScanRequest, _user: dict = Depends(require_auth)):
         acct = get_account(req.stored_account_id)
         if not acct:
             raise HTTPException(status_code=404, detail="Stored account not found")
-        req.access_key = acct["access_key"]
-        req.secret_key = acct["secret_key"]
+        req.provider = acct.get("provider", "aws")
+        req.access_key = acct.get("access_key", "")
+        req.secret_key = acct.get("secret_key", "")
         req.region = acct.get("region", req.region)
         req.role_arn = acct.get("role_arn") or req.role_arn
         req.org_scan = bool(acct.get("org_scan", req.org_scan))
+        # Load provider-specific credentials
+        creds = acct.get("credentials", {})
+        if req.provider == "azure":
+            req.azure_tenant_id = creds.get("tenant_id")
+            req.azure_client_id = creds.get("client_id")
+            req.azure_client_secret = creds.get("client_secret")
+            req.azure_subscription_id = creds.get("subscription_id")
+        elif req.provider == "gcp":
+            req.gcp_project_id = creds.get("project_id")
+            req.gcp_service_account_json = creds.get("service_account_json")
 
     scan_id = str(uuid.uuid4())[:8]
     _scans[scan_id] = {
@@ -300,196 +359,308 @@ def _run_scan(scan_id: str, req: ScanRequest) -> None:
     """Execute the full scan pipeline in a background thread."""
     scan = _scans[scan_id]
     try:
-        # Parse regions
-        region_list = [r.strip() for r in req.regions.split(",")] if req.regions else None
+        provider = req.provider
 
-        # Authenticate
-        scan["progress"] = "Validating AWS credentials..."
-        creds = AWSCredentials(
-            access_key_id=req.access_key,
-            secret_access_key=req.secret_key,
-            session_token=req.session_token,
-            region=req.region,
-            role_arn=req.role_arn,
-        )
-        session = create_session(creds)
-        identity = validate_credentials(session)
-
-        # Determine accounts
-        import boto3
-        accounts_to_scan: list[tuple[str, boto3.Session]] = []
-        if req.org_scan:
-            scan["progress"] = "Discovering Organization accounts..."
-            if is_organizations_account(session):
-                members = list_member_accounts(session)
-                for member in members:
-                    try:
-                        member_session = assume_role_session(session, member["id"], req.org_role, req.region)
-                        accounts_to_scan.append((member["id"], member_session))
-                    except Exception:
-                        log.warning("Could not assume role in %s", member["id"])
-
-        if not accounts_to_scan:
-            account_id = identity.get("Account", "unknown")
-            accounts_to_scan.append((account_id, session))
-
-        # Scan resources
-        all_resources: list[dict] = []
-        all_cost_data: dict = {}
-
-        for account_id, acct_session in accounts_to_scan:
-            scan["progress"] = f"Scanning resources in account {account_id}..."
-            scanners = [
-                ("EC2/EBS/Snapshots", EC2Scanner(acct_session, region_list)),
-                ("RDS", RDSScanner(acct_session, region_list)),
-                ("S3", S3Scanner(acct_session, region_list)),
-                ("Lambda", LambdaScanner(acct_session, region_list)),
-                ("Networking", NetworkingScanner(acct_session, region_list)),
-                ("OpenSearch", OpenSearchScanner(acct_session, region_list)),
-            ]
-
-            for name, scanner in scanners:
-                scan["progress"] = f"Scanning {name} in {account_id}..."
-                try:
-                    resources = scanner.scan()
-                    for r in resources:
-                        r["account_id"] = account_id
-                    all_resources.extend(resources)
-                except Exception:
-                    log.exception("Scanner %s failed for %s", name, account_id)
-
-            # Cost Explorer
-            scan["progress"] = f"Pulling Cost Explorer data for {account_id}..."
-            try:
-                ce = CostExplorerAnalyzer(acct_session)
-                all_cost_data[account_id] = {
-                    "by_service": ce.get_cost_by_service(req.days),
-                    "by_region": ce.get_cost_by_region(req.days),
-                    "by_account": ce.get_cost_by_account(req.days),
-                    "daily_trend": ce.get_daily_costs(req.days),
-                    "total_cost_30d": ce.get_total_cost(req.days),
-                }
-            except Exception:
-                log.exception("Cost Explorer failed for %s", account_id)
-                all_cost_data[account_id] = {
-                    "by_service": [], "by_region": [], "by_account": [],
-                    "daily_trend": [], "total_cost_30d": 0.0,
-                }
-
-        # Merge cost data
-        merged_cost_data = _merge_cost_data(all_cost_data)
-
-        # Cost Intelligence: Anomaly detection
-        anomaly_data = {}
-        scan["progress"] = "Running anomaly detection..."
-        try:
-            ce_primary = CostExplorerAnalyzer(session)
-            detector = AnomalyDetector(ce_primary)
-            anomaly_data = detector.detect(req.days)
-        except Exception:
-            log.exception("Anomaly detection failed")
-
-        # Cost Intelligence: Budget tracking
-        budget_data = {}
-        scan["progress"] = "Analyzing budget and forecast..."
-        try:
-            tracker = BudgetTracker(ce_primary)
-            account_id_for_budget = accounts_to_scan[0][0] if accounts_to_scan else "default"
-            budget_data = tracker.analyze(account_id_for_budget, req.days)
-        except Exception:
-            log.exception("Budget analysis failed")
-
-        # Cost Intelligence: Historical trends
-        trends_data = {}
-        scan["progress"] = "Analyzing historical cost trends..."
-        try:
-            trends_data = {
-                "monthly_trend": ce_primary.get_monthly_trend(months=6),
-                "monthly_by_service": ce_primary.get_monthly_cost_by_service(months=6),
-            }
-        except Exception:
-            log.exception("Historical trend analysis failed")
-
-        # Cost Intelligence: RI/Savings Plans coverage
-        commitments_data = {}
-        scan["progress"] = "Analyzing commitment coverage..."
-        try:
-            commitments_analyzer = CommitmentsAnalyzer(session)
-            commitments_data = commitments_analyzer.analyze(req.days)
-        except Exception:
-            log.exception("Commitments analysis failed")
-
-        # Tag-based cost allocation
-        tag_allocation_data = None
-        if req.allocation_tags:
-            tag_list = [t.strip() for t in req.allocation_tags.split(",") if t.strip()]
-            if tag_list:
-                scan["progress"] = "Analyzing cost allocation by tags..."
-                try:
-                    from finxcloud.analyzer.tags import TagCostAllocator
-                    tag_allocator = TagCostAllocator(session)
-                    tag_allocation_data = tag_allocator.get_cost_by_tags(tag_list, req.days)
-                except Exception:
-                    log.exception("Tag allocation analysis failed")
-
-        # Utilization
-        utilization_analyzer = None
-        if not req.skip_utilization:
-            scan["progress"] = "Collecting utilization metrics..."
-            utilization_analyzer = UtilizationAnalyzer(session)
-
-        # Recommendations
-        scan["progress"] = "Generating recommendations..."
-        engine = RecommendationEngine(all_resources, merged_cost_data, utilization_analyzer)
-        recommendations = engine.generate_recommendations()
-
-        # Reports
-        scan["progress"] = "Building reports..."
-        detailed_reporter = DetailedReporter(all_resources, merged_cost_data)
-        detailed_report = detailed_reporter.generate()
-
-        summary_reporter = SummaryReporter(detailed_report, recommendations)
-        summary_report = summary_reporter.generate()
-
-        roadmap_reporter = RoadmapReporter(recommendations)
-        roadmap_report = roadmap_reporter.generate()
-
-        # Upload to S3 if configured
-        s3_keys: list[str] = []
-        if req.output_s3_bucket:
-            scan["progress"] = "Uploading reports to S3..."
-            s3w = S3Writer(session, req.output_s3_bucket, req.output_s3_prefix)
-            s3_keys = s3w.write_all(detailed_report, summary_report, roadmap_report)
-
-        result = {
-            "summary": summary_report,
-            "detailed": detailed_report,
-            "roadmap": roadmap_report,
-            "recommendations": recommendations,
-            "resources": all_resources,
-            "cost_data": merged_cost_data,
-            "anomalies": anomaly_data,
-            "budget": budget_data,
-            "trends": trends_data,
-            "commitments": commitments_data,
-            "tag_allocation": tag_allocation_data,
-            "s3_keys": s3_keys,
-        }
-
-        # Persist scan result if linked to a stored account
-        stored_acct_id = scan.get("stored_account_id")
-        if stored_acct_id:
-            save_scan_result(stored_acct_id, result)
-
-        scan["result"] = result
-        scan["status"] = "done"
-        scan["progress"] = "Scan complete"
+        if provider == "aws":
+            _run_aws_scan(scan_id, req, scan)
+        elif provider == "azure":
+            _run_cloud_provider_scan(scan_id, req, scan, "azure")
+        elif provider == "gcp":
+            _run_cloud_provider_scan(scan_id, req, scan, "gcp")
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
 
     except Exception as e:
         log.exception("Scan %s failed", scan_id)
         scan["status"] = "failed"
         scan["error"] = str(e)
         scan["progress"] = f"Failed: {e}"
+
+
+def _run_cloud_provider_scan(scan_id: str, req: ScanRequest, scan: dict, provider_name: str) -> None:
+    """Run a scan for Azure or GCP using the provider abstraction."""
+    from finxcloud.providers.base import AzureCloudCredentials, GCPCloudCredentials, ProviderRegistry
+
+    scan["progress"] = f"Setting up {provider_name.upper()} provider..."
+
+    if provider_name == "azure":
+        creds = AzureCloudCredentials(
+            tenant_id=req.azure_tenant_id or "",
+            client_id=req.azure_client_id or "",
+            client_secret=req.azure_client_secret or "",
+            subscription_id=req.azure_subscription_id or "",
+            region=req.region,
+        )
+    else:
+        creds = GCPCloudCredentials(
+            project_id=req.gcp_project_id or "",
+            service_account_json=req.gcp_service_account_json or "",
+            region=req.region,
+        )
+
+    provider_cls = ProviderRegistry.get(provider_name)
+    cloud_provider = provider_cls(creds)
+
+    scan["progress"] = f"Validating {provider_name.upper()} credentials..."
+    cloud_provider.validate_credentials()
+
+    # Scan resources
+    all_resources: list[dict] = []
+    scanners = cloud_provider.get_scanners()
+    for name, scanner in scanners:
+        scan["progress"] = f"Scanning {name}..."
+        try:
+            resources = scanner.scan()
+            for r in resources:
+                r.setdefault("provider", provider_name)
+            all_resources.extend(resources)
+        except Exception:
+            log.exception("Scanner %s failed", name)
+
+    # Cost data
+    all_cost_data: dict = {}
+    scan["progress"] = f"Pulling {provider_name.upper()} cost data..."
+    try:
+        cost_analyzer = cloud_provider.get_cost_analyzer()
+        all_cost_data[provider_name] = {
+            "by_service": cost_analyzer.get_cost_by_service(req.days),
+            "by_region": cost_analyzer.get_cost_by_region(req.days),
+            "by_account": [],
+            "daily_trend": cost_analyzer.get_daily_costs(req.days),
+            "total_cost_30d": cost_analyzer.get_total_cost(req.days),
+        }
+    except Exception:
+        log.exception("Cost data failed for %s", provider_name)
+        all_cost_data[provider_name] = {
+            "by_service": [], "by_region": [], "by_account": [],
+            "daily_trend": [], "total_cost_30d": 0.0,
+        }
+
+    merged_cost_data = _merge_cost_data(all_cost_data)
+
+    # Recommendations
+    scan["progress"] = "Generating recommendations..."
+    engine = RecommendationEngine(all_resources, merged_cost_data, None)
+    recommendations = engine.generate_recommendations()
+
+    # Reports
+    scan["progress"] = "Building reports..."
+    detailed_reporter = DetailedReporter(all_resources, merged_cost_data)
+    detailed_report = detailed_reporter.generate()
+
+    summary_reporter = SummaryReporter(detailed_report, recommendations)
+    summary_report = summary_reporter.generate()
+
+    roadmap_reporter = RoadmapReporter(recommendations)
+    roadmap_report = roadmap_reporter.generate()
+
+    result = {
+        "summary": summary_report,
+        "detailed": detailed_report,
+        "roadmap": roadmap_report,
+        "recommendations": recommendations,
+        "resources": all_resources,
+        "cost_data": merged_cost_data,
+        "provider": provider_name,
+    }
+
+    stored_acct_id = scan.get("stored_account_id")
+    if stored_acct_id:
+        save_scan_result(stored_acct_id, result)
+
+    scan["result"] = result
+    scan["status"] = "done"
+    scan["progress"] = "Scan complete"
+
+
+def _run_aws_scan(scan_id: str, req: ScanRequest, scan: dict) -> None:
+    """Execute the full AWS scan pipeline (original logic)."""
+    # Parse regions
+    region_list = [r.strip() for r in req.regions.split(",")] if req.regions else None
+
+    # Authenticate
+    scan["progress"] = "Validating AWS credentials..."
+    creds = AWSCredentials(
+        access_key_id=req.access_key,
+        secret_access_key=req.secret_key,
+        session_token=req.session_token,
+        region=req.region,
+        role_arn=req.role_arn,
+    )
+    session = create_session(creds)
+    identity = validate_credentials(session)
+
+    # Determine accounts
+    import boto3
+    accounts_to_scan: list[tuple[str, boto3.Session]] = []
+    if req.org_scan:
+        scan["progress"] = "Discovering Organization accounts..."
+        if is_organizations_account(session):
+            members = list_member_accounts(session)
+            for member in members:
+                try:
+                    member_session = assume_role_session(session, member["id"], req.org_role, req.region)
+                    accounts_to_scan.append((member["id"], member_session))
+                except Exception:
+                    log.warning("Could not assume role in %s", member["id"])
+
+    if not accounts_to_scan:
+        account_id = identity.get("Account", "unknown")
+        accounts_to_scan.append((account_id, session))
+
+    # Scan resources
+    all_resources: list[dict] = []
+    all_cost_data: dict = {}
+
+    for account_id, acct_session in accounts_to_scan:
+        scan["progress"] = f"Scanning resources in account {account_id}..."
+        scanners = [
+            ("EC2/EBS/Snapshots", EC2Scanner(acct_session, region_list)),
+            ("RDS", RDSScanner(acct_session, region_list)),
+            ("S3", S3Scanner(acct_session, region_list)),
+            ("Lambda", LambdaScanner(acct_session, region_list)),
+            ("Networking", NetworkingScanner(acct_session, region_list)),
+            ("OpenSearch", OpenSearchScanner(acct_session, region_list)),
+        ]
+
+        for name, scanner in scanners:
+            scan["progress"] = f"Scanning {name} in {account_id}..."
+            try:
+                resources = scanner.scan()
+                for r in resources:
+                    r["account_id"] = account_id
+                    r.setdefault("provider", "aws")
+                all_resources.extend(resources)
+            except Exception:
+                log.exception("Scanner %s failed for %s", name, account_id)
+
+        # Cost Explorer
+        scan["progress"] = f"Pulling Cost Explorer data for {account_id}..."
+        try:
+            ce = CostExplorerAnalyzer(acct_session)
+            all_cost_data[account_id] = {
+                "by_service": ce.get_cost_by_service(req.days),
+                "by_region": ce.get_cost_by_region(req.days),
+                "by_account": ce.get_cost_by_account(req.days),
+                "daily_trend": ce.get_daily_costs(req.days),
+                "total_cost_30d": ce.get_total_cost(req.days),
+            }
+        except Exception:
+            log.exception("Cost Explorer failed for %s", account_id)
+            all_cost_data[account_id] = {
+                "by_service": [], "by_region": [], "by_account": [],
+                "daily_trend": [], "total_cost_30d": 0.0,
+            }
+
+    # Merge cost data
+    merged_cost_data = _merge_cost_data(all_cost_data)
+
+    # Cost Intelligence: Anomaly detection
+    anomaly_data = {}
+    scan["progress"] = "Running anomaly detection..."
+    try:
+        ce_primary = CostExplorerAnalyzer(session)
+        detector = AnomalyDetector(ce_primary)
+        anomaly_data = detector.detect(req.days)
+    except Exception:
+        log.exception("Anomaly detection failed")
+
+    # Cost Intelligence: Budget tracking
+    budget_data = {}
+    scan["progress"] = "Analyzing budget and forecast..."
+    try:
+        tracker = BudgetTracker(ce_primary)
+        account_id_for_budget = accounts_to_scan[0][0] if accounts_to_scan else "default"
+        budget_data = tracker.analyze(account_id_for_budget, req.days)
+    except Exception:
+        log.exception("Budget analysis failed")
+
+    # Cost Intelligence: Historical trends
+    trends_data = {}
+    scan["progress"] = "Analyzing historical cost trends..."
+    try:
+        trends_data = {
+            "monthly_trend": ce_primary.get_monthly_trend(months=6),
+            "monthly_by_service": ce_primary.get_monthly_cost_by_service(months=6),
+        }
+    except Exception:
+        log.exception("Historical trend analysis failed")
+
+    # Cost Intelligence: RI/Savings Plans coverage
+    commitments_data = {}
+    scan["progress"] = "Analyzing commitment coverage..."
+    try:
+        commitments_analyzer = CommitmentsAnalyzer(session)
+        commitments_data = commitments_analyzer.analyze(req.days)
+    except Exception:
+        log.exception("Commitments analysis failed")
+
+    # Tag-based cost allocation
+    tag_allocation_data = None
+    if req.allocation_tags:
+        tag_list = [t.strip() for t in req.allocation_tags.split(",") if t.strip()]
+        if tag_list:
+            scan["progress"] = "Analyzing cost allocation by tags..."
+            try:
+                from finxcloud.analyzer.tags import TagCostAllocator
+                tag_allocator = TagCostAllocator(session)
+                tag_allocation_data = tag_allocator.get_cost_by_tags(tag_list, req.days)
+            except Exception:
+                log.exception("Tag allocation analysis failed")
+
+    # Utilization
+    utilization_analyzer = None
+    if not req.skip_utilization:
+        scan["progress"] = "Collecting utilization metrics..."
+        utilization_analyzer = UtilizationAnalyzer(session)
+
+    # Recommendations
+    scan["progress"] = "Generating recommendations..."
+    engine = RecommendationEngine(all_resources, merged_cost_data, utilization_analyzer)
+    recommendations = engine.generate_recommendations()
+
+    # Reports
+    scan["progress"] = "Building reports..."
+    detailed_reporter = DetailedReporter(all_resources, merged_cost_data)
+    detailed_report = detailed_reporter.generate()
+
+    summary_reporter = SummaryReporter(detailed_report, recommendations)
+    summary_report = summary_reporter.generate()
+
+    roadmap_reporter = RoadmapReporter(recommendations)
+    roadmap_report = roadmap_reporter.generate()
+
+    # Upload to S3 if configured
+    s3_keys: list[str] = []
+    if req.output_s3_bucket:
+        scan["progress"] = "Uploading reports to S3..."
+        s3w = S3Writer(session, req.output_s3_bucket, req.output_s3_prefix)
+        s3_keys = s3w.write_all(detailed_report, summary_report, roadmap_report)
+
+    result = {
+        "summary": summary_report,
+        "detailed": detailed_report,
+        "roadmap": roadmap_report,
+        "recommendations": recommendations,
+        "resources": all_resources,
+        "cost_data": merged_cost_data,
+        "anomalies": anomaly_data,
+        "budget": budget_data,
+        "trends": trends_data,
+        "commitments": commitments_data,
+        "tag_allocation": tag_allocation_data,
+        "s3_keys": s3_keys,
+        "provider": "aws",
+    }
+
+    # Persist scan result if linked to a stored account
+    stored_acct_id = scan.get("stored_account_id")
+    if stored_acct_id:
+        save_scan_result(stored_acct_id, result)
+
+    scan["result"] = result
+    scan["status"] = "done"
+    scan["progress"] = "Scan complete"
 
 
 # ---------------------------------------------------------------------------

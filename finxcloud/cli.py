@@ -1,4 +1,4 @@
-"""FinXCloud CLI — AWS Cost Optimization Tool."""
+"""FinXCloud CLI — Multi-Cloud Cost Optimization Tool."""
 
 from __future__ import annotations
 
@@ -32,6 +32,16 @@ from finxcloud.reporter.roadmap import RoadmapReporter
 from finxcloud.output.json_writer import JSONWriter
 from finxcloud.output.html_writer import HTMLWriter
 from finxcloud.output.s3_writer import S3Writer
+from finxcloud.providers.base import (
+    AWSCloudCredentials,
+    AzureCloudCredentials,
+    GCPCloudCredentials,
+    ProviderRegistry,
+)
+# Register all providers
+import finxcloud.providers.aws  # noqa: F401
+import finxcloud.providers.azure  # noqa: F401
+import finxcloud.providers.gcp  # noqa: F401
 
 console = Console()
 log = logging.getLogger("finxcloud")
@@ -40,7 +50,7 @@ log = logging.getLogger("finxcloud")
 @click.group()
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
 def main(verbose: bool) -> None:
-    """FinXCloud — AWS Cost Optimization Tool."""
+    """FinXCloud — Multi-Cloud Cost Optimization Tool."""
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
@@ -49,7 +59,227 @@ def main(verbose: bool) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Multi-cloud scan command
+# ---------------------------------------------------------------------------
+
+@main.command("scan-cloud")
+@click.option("--provider", type=click.Choice(["aws", "azure", "gcp", "all"]), default="aws",
+              help="Cloud provider to scan (aws, azure, gcp, or all).")
+# AWS options
+@click.option("--access-key", envvar="AWS_ACCESS_KEY_ID", default=None, help="AWS Access Key ID.")
+@click.option("--secret-key", envvar="AWS_SECRET_ACCESS_KEY", default=None, help="AWS Secret Access Key.")
+@click.option("--session-token", envvar="AWS_SESSION_TOKEN", default=None, help="AWS Session Token.")
+@click.option("--profile", default=None, help="AWS CLI profile name.")
+# Azure options
+@click.option("--azure-tenant-id", envvar="AZURE_TENANT_ID", default=None, help="Azure Tenant ID.")
+@click.option("--azure-client-id", envvar="AZURE_CLIENT_ID", default=None, help="Azure Client ID.")
+@click.option("--azure-client-secret", envvar="AZURE_CLIENT_SECRET", default=None, help="Azure Client Secret.")
+@click.option("--azure-subscription-id", envvar="AZURE_SUBSCRIPTION_ID", default=None, help="Azure Subscription ID.")
+@click.option("--azure-use-cli", is_flag=True, help="Use Azure CLI credentials.")
+# GCP options
+@click.option("--gcp-project-id", envvar="GCP_PROJECT_ID", default=None, help="GCP Project ID.")
+@click.option("--gcp-service-account-json", envvar="GCP_SERVICE_ACCOUNT_JSON", default=None,
+              help="GCP Service Account JSON key (string or file path).")
+@click.option("--gcp-use-cli", is_flag=True, help="Use gcloud CLI credentials.")
+# Common options
+@click.option("--region", default=None, help="Default region (provider-specific).")
+@click.option("--days", default=30, type=int, help="Cost analysis lookback period in days.")
+@click.option("--output-dir", "-o", default="reports", help="Output directory for reports.")
+@click.option("--output-pdf", is_flag=True, help="Generate a PDF executive summary report.")
+def scan_cloud(
+    provider: str,
+    access_key: str | None,
+    secret_key: str | None,
+    session_token: str | None,
+    profile: str | None,
+    azure_tenant_id: str | None,
+    azure_client_id: str | None,
+    azure_client_secret: str | None,
+    azure_subscription_id: str | None,
+    azure_use_cli: bool,
+    gcp_project_id: str | None,
+    gcp_service_account_json: str | None,
+    gcp_use_cli: bool,
+    region: str | None,
+    days: int,
+    output_dir: str,
+    output_pdf: bool,
+) -> None:
+    """Run a multi-cloud cost optimization scan (AWS, Azure, GCP)."""
+    console.print("\n[bold blue]FinXCloud[/bold blue] — Multi-Cloud Cost Optimization Tool\n")
+
+    providers_to_scan = []
+
+    if provider in ("aws", "all"):
+        if access_key and secret_key:
+            aws_creds = AWSCloudCredentials(
+                access_key_id=access_key,
+                secret_access_key=secret_key,
+                session_token=session_token,
+                region=region or "us-east-1",
+                profile=profile,
+            )
+            aws_provider_cls = ProviderRegistry.get("aws")
+            providers_to_scan.append(aws_provider_cls(aws_creds))
+        elif provider == "aws":
+            console.print("[red]AWS credentials required (--access-key, --secret-key).[/red]")
+            sys.exit(1)
+
+    if provider in ("azure", "all"):
+        if azure_subscription_id and (azure_use_cli or (azure_client_id and azure_client_secret)):
+            azure_creds = AzureCloudCredentials(
+                tenant_id=azure_tenant_id or "",
+                client_id=azure_client_id or "",
+                client_secret=azure_client_secret or "",
+                subscription_id=azure_subscription_id,
+                region=region or "eastus",
+                use_cli=azure_use_cli,
+            )
+            azure_provider_cls = ProviderRegistry.get("azure")
+            providers_to_scan.append(azure_provider_cls(azure_creds))
+        elif provider == "azure":
+            console.print("[red]Azure credentials required (--azure-subscription-id + --azure-use-cli or Service Principal).[/red]")
+            sys.exit(1)
+
+    if provider in ("gcp", "all"):
+        if gcp_project_id and (gcp_use_cli or gcp_service_account_json):
+            sa_json = gcp_service_account_json or ""
+            if sa_json and Path(sa_json).is_file():
+                sa_json = Path(sa_json).read_text()
+            gcp_creds = GCPCloudCredentials(
+                project_id=gcp_project_id,
+                service_account_json=sa_json,
+                region=region or "us-central1",
+                use_cli=gcp_use_cli,
+            )
+            gcp_provider_cls = ProviderRegistry.get("gcp")
+            providers_to_scan.append(gcp_provider_cls(gcp_creds))
+        elif provider == "gcp":
+            console.print("[red]GCP credentials required (--gcp-project-id + --gcp-use-cli or --gcp-service-account-json).[/red]")
+            sys.exit(1)
+
+    if not providers_to_scan:
+        console.print("[red]No providers configured. Provide credentials for at least one cloud provider.[/red]")
+        sys.exit(1)
+
+    all_resources: list[dict] = []
+    all_cost_data: dict = {}
+
+    for cloud_provider in providers_to_scan:
+        console.print(f"\n[bold]Scanning {cloud_provider.name.upper()} resources...[/bold]")
+
+        # Validate credentials
+        with console.status(f"[bold green]Validating {cloud_provider.name.upper()} credentials..."):
+            try:
+                identity = cloud_provider.validate_credentials()
+                console.print(f"  [green]Authenticated: {identity}[/green]")
+            except Exception as e:
+                console.print(f"  [red]Authentication failed: {e}[/red]")
+                continue
+
+        # Run scanners
+        scanners = cloud_provider.get_scanners()
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            for name, scanner in scanners:
+                task = progress.add_task(f"Scanning {name}...", total=None)
+                try:
+                    resources = scanner.scan()
+                    for r in resources:
+                        r.setdefault("provider", cloud_provider.name)
+                    all_resources.extend(resources)
+                    progress.update(task, description=f"[green]{name}: {len(resources)} resources")
+                except Exception as e:
+                    progress.update(task, description=f"[red]{name}: {e}")
+                    log.error("Scanner %s failed: %s", name, e)
+                progress.update(task, completed=True)
+
+        # Cost data
+        with console.status(f"[bold green]Pulling {cloud_provider.name.upper()} cost data..."):
+            try:
+                cost_analyzer = cloud_provider.get_cost_analyzer()
+                provider_cost = {
+                    "by_service": cost_analyzer.get_cost_by_service(days),
+                    "by_region": cost_analyzer.get_cost_by_region(days),
+                    "by_account": [],
+                    "daily_trend": cost_analyzer.get_daily_costs(days),
+                    "total_cost_30d": cost_analyzer.get_total_cost(days),
+                }
+                all_cost_data[cloud_provider.name] = provider_cost
+                console.print(f"  Total cost ({days}d): [bold]${provider_cost['total_cost_30d']:.2f}[/bold]")
+            except Exception as e:
+                console.print(f"  [yellow]Cost data unavailable: {e}[/yellow]")
+                all_cost_data[cloud_provider.name] = {
+                    "by_service": [], "by_region": [], "by_account": [],
+                    "daily_trend": [], "total_cost_30d": 0.0,
+                }
+
+    # Merge cost data
+    merged_cost_data = _merge_cost_data(all_cost_data)
+
+    # Recommendations (no utilization for non-AWS providers yet)
+    with console.status("[bold green]Generating recommendations..."):
+        engine = RecommendationEngine(all_resources, merged_cost_data, None)
+        recommendations = engine.generate_recommendations()
+        console.print(f"  Generated [bold]{len(recommendations)}[/bold] recommendations")
+
+    # Reports
+    with console.status("[bold green]Building reports..."):
+        detailed_reporter = DetailedReporter(all_resources, merged_cost_data)
+        detailed_report = detailed_reporter.generate()
+
+        summary_reporter = SummaryReporter(detailed_report, recommendations)
+        summary_report = summary_reporter.generate()
+
+        roadmap_reporter = RoadmapReporter(recommendations)
+        roadmap_report = roadmap_reporter.generate()
+
+    # Write output
+    with console.status("[bold green]Writing reports..."):
+        json_writer = JSONWriter(output_dir)
+        json_files = json_writer.write_all(detailed_report, summary_report, roadmap_report)
+
+        html_writer = HTMLWriter(output_dir)
+        html_file = html_writer.write(summary_report, detailed_report, roadmap_report)
+
+    # PDF export
+    pdf_file = None
+    if output_pdf:
+        with console.status("[bold green]Generating PDF report..."):
+            try:
+                from finxcloud.output.pdf_writer import PDFWriter
+                pdf_writer = PDFWriter(output_dir)
+                pdf_file = pdf_writer.write(summary_report, detailed_report, roadmap_report)
+            except ImportError:
+                console.print("  [red]reportlab is required for PDF export.[/red]")
+            except Exception as e:
+                console.print(f"  [yellow]PDF generation failed: {e}[/yellow]")
+
+    # Print summary
+    console.print("\n" + "=" * 60)
+    console.print("[bold blue]FinXCloud Multi-Cloud Scan Complete[/bold blue]")
+    console.print("=" * 60)
+    _print_summary_table(summary_report)
+    console.print(f"\n[bold]Reports written to:[/bold]")
+    for f in json_files:
+        console.print(f"  {f}")
+    console.print(f"  {html_file}")
+    if pdf_file:
+        console.print(f"  {pdf_file}")
+    console.print()
+
+
+# ---------------------------------------------------------------------------
+# Original AWS scan command (backward compatible)
+# ---------------------------------------------------------------------------
+
 @main.command()
+@click.option("--provider", type=click.Choice(["aws", "azure", "gcp"]), default="aws",
+              help="Cloud provider to scan.")
 @click.option("--access-key", envvar="AWS_ACCESS_KEY_ID", required=True, help="AWS Access Key ID.")
 @click.option("--secret-key", envvar="AWS_SECRET_ACCESS_KEY", required=True, help="AWS Secret Access Key.")
 @click.option("--session-token", envvar="AWS_SESSION_TOKEN", default=None, help="AWS Session Token (optional).")
@@ -66,6 +296,7 @@ def main(verbose: bool) -> None:
 @click.option("--output-pdf", is_flag=True, help="Generate a PDF executive summary report.")
 @click.option("--allocation-tags", default=None, help="Comma-separated AWS cost-allocation tags (e.g. Team,Project,Environment).")
 def scan(
+    provider: str,
     access_key: str,
     secret_key: str,
     session_token: str | None,
