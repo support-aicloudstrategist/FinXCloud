@@ -481,5 +481,69 @@ def deploy(
     console.print(f"\n  [bold green]🌐 Public URL: {url}[/bold green]\n")
 
 
+@main.command("send-report")
+@click.option("--to", "to_email", required=True, help="Recipient email address.")
+@click.option("--subject", default=None, help="Email subject (auto-generated if omitted).")
+@click.option("--report-file", default=None, help="Path to an HTML file to send as the email body.")
+@click.option("--smtp-host", envvar="FINXCLOUD_SMTP_HOST", default=None, help="SMTP server hostname.")
+@click.option("--smtp-port", envvar="FINXCLOUD_SMTP_PORT", default=587, type=int, help="SMTP server port.")
+@click.option("--smtp-user", envvar="FINXCLOUD_SMTP_USER", default=None, help="SMTP username.")
+@click.option("--smtp-password", envvar="FINXCLOUD_SMTP_PASSWORD", default=None, help="SMTP password.")
+@click.option("--from-email", envvar="FINXCLOUD_FROM_EMAIL", default=None, help="Sender email address.")
+def send_report(
+    to_email: str,
+    subject: str | None,
+    report_file: str | None,
+    smtp_host: str | None,
+    smtp_port: int,
+    smtp_user: str | None,
+    smtp_password: str | None,
+    from_email: str | None,
+) -> None:
+    """Send a report or notification email via SMTP."""
+    from finxcloud.email.sender import EmailConfig, send_email
+
+    config = EmailConfig(
+        smtp_host=smtp_host,
+        smtp_port=smtp_port,
+        smtp_user=smtp_user,
+        smtp_password=smtp_password,
+        from_address=from_email,
+    )
+
+    if not config.is_configured:
+        console.print(
+            "[red]Email not configured.[/red] Set these environment variables:\n"
+            "  FINXCLOUD_SMTP_HOST     — SMTP server (e.g. smtp.gmail.com)\n"
+            "  FINXCLOUD_SMTP_USER     — SMTP username / email\n"
+            "  FINXCLOUD_SMTP_PASSWORD — SMTP password or app password\n"
+            "  FINXCLOUD_FROM_EMAIL    — Sender address (optional, defaults to SMTP_USER)\n"
+        )
+        sys.exit(1)
+
+    if report_file:
+        html_body = Path(report_file).read_text(encoding="utf-8")
+    else:
+        console.print("[red]Provide --report-file with the HTML report to send.[/red]")
+        sys.exit(1)
+
+    if not subject:
+        from datetime import date
+        subject = f"AICloud Strategist — Daily Status Report — {date.today().isoformat()}"
+
+    recipients = [addr.strip() for addr in to_email.split(",")]
+
+    console.print(f"[bold blue]Sending email...[/bold blue]")
+    console.print(f"  To: {', '.join(recipients)}")
+    console.print(f"  Subject: {subject}")
+
+    success = send_email(config, recipients, subject, html_body)
+    if success:
+        console.print("[green]  ✓ Email sent successfully.[/green]")
+    else:
+        console.print("[red]  ✗ Failed to send email. Check logs for details.[/red]")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()

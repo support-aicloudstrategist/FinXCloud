@@ -1,0 +1,1 @@
+"""FinXCloud email sending module."""
