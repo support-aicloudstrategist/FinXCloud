@@ -49,6 +49,37 @@ The web dashboard provides:
 
 Options: `--host` (default: 127.0.0.1), `--port` / `-p` (default: 8000), `--reload` (dev mode).
 
+### Deploy to S3 (Public URL)
+
+Deploy the dashboard to an S3 bucket for public web access:
+
+```bash
+# Run a fresh scan and deploy the dashboard to S3
+finxcloud deploy \
+  --access-key AKIA... \
+  --secret-key ... \
+  --bucket my-finxcloud-dashboard \
+  --region us-east-1
+
+# Or deploy using existing local reports (no new scan)
+finxcloud deploy \
+  --access-key AKIA... \
+  --secret-key ... \
+  --bucket my-finxcloud-dashboard \
+  --from-reports \
+  --report-dir reports
+```
+
+This will:
+1. Run a scan (or load existing reports with `--from-reports`)
+2. Generate a self-contained HTML dashboard with embedded data
+3. Create/configure the S3 bucket for static website hosting
+4. Upload the dashboard and print the public URL
+
+The public URL will be: `http://<bucket>.s3-website-<region>.amazonaws.com`
+
+**Required IAM permissions** for deploy: `s3:CreateBucket`, `s3:PutBucketWebsite`, `s3:PutBucketPolicy`, `s3:PutPublicAccessBlock`, `s3:PutObject`, `s3:HeadBucket` (in addition to the read-only scanning permissions).
+
 ### CLI
 
 ```bash

@@ -348,5 +348,138 @@ def web(host: str, port: int, do_reload: bool) -> None:
     uvicorn.run("finxcloud.web.app:app", host=host, port=port, reload=do_reload)
 
 
+@main.command()
+@click.option("--access-key", envvar="AWS_ACCESS_KEY_ID", required=True, help="AWS Access Key ID.")
+@click.option("--secret-key", envvar="AWS_SECRET_ACCESS_KEY", required=True, help="AWS Secret Access Key.")
+@click.option("--session-token", envvar="AWS_SESSION_TOKEN", default=None, help="AWS Session Token.")
+@click.option("--region", default="us-east-1", help="AWS region.")
+@click.option("--bucket", required=True, help="S3 bucket name for hosting the dashboard.")
+@click.option("--prefix", default="", help="S3 key prefix (subfolder).")
+@click.option("--report-dir", default="reports", help="Local directory with existing JSON reports to embed.")
+@click.option("--days", default=30, type=int, help="Cost analysis lookback period (if running a fresh scan).")
+@click.option("--skip-utilization", is_flag=True, help="Skip CloudWatch utilization checks.")
+@click.option("--from-reports", is_flag=True, help="Use existing local reports instead of running a new scan.")
+def deploy(
+    access_key: str,
+    secret_key: str,
+    session_token: str | None,
+    region: str,
+    bucket: str,
+    prefix: str,
+    report_dir: str,
+    days: int,
+    skip_utilization: bool,
+    from_reports: bool,
+) -> None:
+    """Deploy the FinXCloud dashboard to S3 with a public URL.
+
+    Either runs a fresh scan or uses existing reports from --report-dir.
+    """
+    from finxcloud.web.deploy import deploy_to_s3
+
+    creds = AWSCredentials(
+        access_key_id=access_key,
+        secret_access_key=secret_key,
+        session_token=session_token,
+        region=region,
+    )
+    session = create_session(creds)
+
+    console.print("\n[bold blue]FinXCloud Deploy[/bold blue]\n")
+
+    if from_reports:
+        # Load existing reports
+        report_path = Path(report_dir)
+        report_data = {}
+        for name in ("summary_report", "detailed_report", "roadmap_report"):
+            fpath = report_path / f"{name}.json"
+            if fpath.exists():
+                report_data[name.replace("_report", "")] = json.loads(fpath.read_text())
+                console.print(f"  ✓ Loaded {fpath}")
+            else:
+                console.print(f"  [yellow]⚠ {fpath} not found[/yellow]")
+    else:
+        # Run a fresh scan
+        with console.status("[bold green]Validating credentials..."):
+            identity = validate_credentials(session)
+            console.print(f"  ✓ Authenticated as [bold]{identity['Arn']}[/bold]")
+
+        account_id = identity.get("Account", "unknown")
+        all_resources: list[dict] = []
+
+        scanners = [
+            ("EC2/EBS/Snapshots", EC2Scanner(session)),
+            ("RDS", RDSScanner(session)),
+            ("S3", S3Scanner(session)),
+            ("Lambda", LambdaScanner(session)),
+            ("Networking", NetworkingScanner(session)),
+            ("OpenSearch", OpenSearchScanner(session)),
+        ]
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            for name, scanner in scanners:
+                task = progress.add_task(f"Scanning {name}...", total=None)
+                try:
+                    resources = scanner.scan()
+                    for r in resources:
+                        r["account_id"] = account_id
+                    all_resources.extend(resources)
+                    progress.update(task, description=f"[green]✓ {name}: {len(resources)} resources")
+                except Exception as e:
+                    progress.update(task, description=f"[red]✗ {name}: {e}")
+                progress.update(task, completed=True)
+
+        with console.status("[bold green]Pulling Cost Explorer data..."):
+            try:
+                ce = CostExplorerAnalyzer(session)
+                cost_data = {
+                    "by_service": ce.get_cost_by_service(days),
+                    "by_region": ce.get_cost_by_region(days),
+                    "by_account": ce.get_cost_by_account(days),
+                    "daily_trend": ce.get_daily_costs(days),
+                    "total_cost_30d": ce.get_total_cost(days),
+                }
+            except Exception:
+                cost_data = {
+                    "by_service": [], "by_region": [], "by_account": [],
+                    "daily_trend": [], "total_cost_30d": 0.0,
+                }
+
+        utilization_analyzer = None
+        if not skip_utilization:
+            utilization_analyzer = UtilizationAnalyzer(session)
+
+        with console.status("[bold green]Generating reports..."):
+            engine = RecommendationEngine(all_resources, cost_data, utilization_analyzer)
+            recommendations = engine.generate_recommendations()
+
+            detailed_reporter = DetailedReporter(all_resources, cost_data)
+            detailed_report = detailed_reporter.generate()
+
+            summary_reporter = SummaryReporter(detailed_report, recommendations)
+            summary_report = summary_reporter.generate()
+
+            roadmap_reporter = RoadmapReporter(recommendations)
+            roadmap_report = roadmap_reporter.generate()
+
+        report_data = {
+            "summary": summary_report,
+            "detailed": detailed_report,
+            "roadmap": roadmap_report,
+            "recommendations": recommendations,
+        }
+
+    # Deploy to S3
+    with console.status(f"[bold green]Deploying to S3 bucket '{bucket}'..."):
+        url = deploy_to_s3(session, bucket, report_data, prefix)
+
+    console.print(f"\n  ✓ Dashboard deployed successfully!")
+    console.print(f"\n  [bold green]🌐 Public URL: {url}[/bold green]\n")
+
+
 if __name__ == "__main__":
     main()
