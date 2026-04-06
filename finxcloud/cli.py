@@ -63,6 +63,8 @@ def main(verbose: bool) -> None:
 @click.option("--output-s3-bucket", default=None, help="S3 bucket to upload reports to (in addition to local disk).")
 @click.option("--output-s3-prefix", default="", help="S3 key prefix for uploaded reports.")
 @click.option("--skip-utilization", is_flag=True, help="Skip CloudWatch utilization checks (faster).")
+@click.option("--output-pdf", is_flag=True, help="Generate a PDF executive summary report.")
+@click.option("--allocation-tags", default=None, help="Comma-separated AWS cost-allocation tags (e.g. Team,Project,Environment).")
 def scan(
     access_key: str,
     secret_key: str,
@@ -77,6 +79,8 @@ def scan(
     output_dir: str,
     regions: str | None,
     skip_utilization: bool,
+    output_pdf: bool,
+    allocation_tags: str | None,
 ) -> None:
     """Run a full AWS cost optimization scan."""
     console.print("\n[bold blue]FinXCloud[/bold blue] — AWS Cost Optimization Tool\n")
@@ -228,6 +232,23 @@ def scan(
         except Exception as e:
             console.print(f"  [yellow]Commitment analysis unavailable: {e}[/yellow]")
 
+    # Tag-based cost allocation
+    tag_allocation_data = None
+    if allocation_tags:
+        tag_list = [t.strip() for t in allocation_tags.split(",") if t.strip()]
+        if tag_list:
+            with console.status("[bold green]Analyzing cost allocation by tags..."):
+                try:
+                    from finxcloud.analyzer.tags import TagCostAllocator
+                    tag_allocator = TagCostAllocator(session)
+                    tag_allocation_data = tag_allocator.get_cost_by_tags(tag_list, days)
+                    for tg in tag_allocation_data.get("by_tag", []):
+                        tag_key = tg["tag_key"]
+                        num_vals = len(tg["values"])
+                        console.print(f"  Tag [bold]{tag_key}[/bold]: {num_vals} values, total ${tg['total']:.2f}")
+                except Exception as e:
+                    console.print(f"  [yellow]Tag allocation unavailable: {e}[/yellow]")
+
     # Utilization analysis
     utilization_analyzer = None
     if not skip_utilization:
@@ -259,6 +280,22 @@ def scan(
         html_writer = HTMLWriter(output_dir)
         html_file = html_writer.write(summary_report, detailed_report, roadmap_report)
 
+    # PDF export
+    pdf_file = None
+    if output_pdf:
+        with console.status("[bold green]Generating PDF report..."):
+            try:
+                from finxcloud.output.pdf_writer import PDFWriter
+                pdf_writer = PDFWriter(output_dir)
+                pdf_file = pdf_writer.write(
+                    summary_report, detailed_report, roadmap_report,
+                    tag_allocation=tag_allocation_data,
+                )
+            except ImportError:
+                console.print("  [red]reportlab is required for PDF export. Install with: pip install 'finxcloud[pdf]'[/red]")
+            except Exception as e:
+                console.print(f"  [yellow]PDF generation failed: {e}[/yellow]")
+
     # Upload to S3 if configured
     s3_keys: list[str] = []
     if output_s3_bucket:
@@ -281,6 +318,8 @@ def scan(
     for f in json_files:
         console.print(f"  📄 {f}")
     console.print(f"  🌐 {html_file}")
+    if pdf_file:
+        console.print(f"  📊 {pdf_file}")
     if s3_keys:
         console.print(f"\n[bold]Reports uploaded to S3:[/bold]")
         for key in s3_keys:
@@ -375,6 +414,42 @@ def _print_summary_table(summary: dict) -> None:
 
 # Need to import boto3 for type hint in accounts_to_scan
 import boto3  # noqa: E402
+
+
+@main.command("export-pdf")
+@click.option("--report-dir", default="reports", help="Directory containing existing JSON reports.")
+@click.option("--output-dir", "-o", default=None, help="Output directory for PDF (defaults to report-dir).")
+def export_pdf(report_dir: str, output_dir: str | None) -> None:
+    """Generate a PDF executive summary from existing JSON reports."""
+    report_path = Path(report_dir)
+    out_dir = output_dir or report_dir
+
+    # Load reports
+    reports = {}
+    for name in ("summary_report", "detailed_report", "roadmap_report"):
+        fpath = report_path / f"{name}.json"
+        if fpath.exists():
+            reports[name.replace("_report", "")] = json.loads(fpath.read_text())
+            console.print(f"  Loaded {fpath}")
+        else:
+            console.print(f"  [yellow]{fpath} not found[/yellow]")
+
+    if "summary" not in reports or "detailed" not in reports:
+        console.print("[red]Missing required reports (summary_report.json, detailed_report.json).[/red]")
+        sys.exit(1)
+
+    try:
+        from finxcloud.output.pdf_writer import PDFWriter
+        pdf_writer = PDFWriter(out_dir)
+        pdf_file = pdf_writer.write(
+            reports["summary"],
+            reports["detailed"],
+            reports.get("roadmap", {"phases": []}),
+        )
+        console.print(f"\n  [green]PDF report generated: {pdf_file}[/green]")
+    except ImportError:
+        console.print("[red]reportlab is required. Install with: pip install 'finxcloud[pdf]'[/red]")
+        sys.exit(1)
 
 
 @main.command()

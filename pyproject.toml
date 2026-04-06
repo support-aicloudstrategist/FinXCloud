@@ -22,6 +22,9 @@ web = [
     "pyjwt>=2.8.0",
     "cryptography>=42.0.0",
 ]
+pdf = [
+    "reportlab>=4.1.0",
+]
 dev = [
     "pytest>=7.0",
     "moto>=5.0",

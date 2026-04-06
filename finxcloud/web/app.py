@@ -75,6 +75,7 @@ class ScanRequest(BaseModel):
     output_s3_bucket: str | None = None
     output_s3_prefix: str = ""
     stored_account_id: str | None = None
+    allocation_tags: str | None = None
 
 
 class AccountRequest(BaseModel):
@@ -260,6 +261,41 @@ async def get_scan_results(scan_id: str, _user: dict = Depends(require_auth)):
     return scan["result"]
 
 
+@app.get("/api/scan/{scan_id}/pdf")
+async def download_scan_pdf(scan_id: str, _user: dict = Depends(require_auth)):
+    """Generate and return a PDF report for a completed scan."""
+    scan = _scans.get(scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan["status"] == "running":
+        raise HTTPException(status_code=202, detail="Scan still running")
+    if scan["status"] == "failed":
+        raise HTTPException(status_code=500, detail=scan["error"])
+
+    result = scan["result"]
+    try:
+        from finxcloud.output.pdf_writer import PDFWriter
+        writer = PDFWriter()
+        pdf_bytes = writer.write_bytes(
+            result.get("summary", {}),
+            result.get("detailed", {}),
+            result.get("roadmap", {}),
+            tag_allocation=result.get("tag_allocation"),
+        )
+    except ImportError:
+        raise HTTPException(
+            status_code=501,
+            detail="reportlab is not installed. Install with: pip install 'finxcloud[pdf]'",
+        )
+
+    from fastapi.responses import Response
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=finxcloud_report.pdf"},
+    )
+
+
 def _run_scan(scan_id: str, req: ScanRequest) -> None:
     """Execute the full scan pipeline in a background thread."""
     scan = _scans[scan_id]
@@ -383,6 +419,19 @@ def _run_scan(scan_id: str, req: ScanRequest) -> None:
         except Exception:
             log.exception("Commitments analysis failed")
 
+        # Tag-based cost allocation
+        tag_allocation_data = None
+        if req.allocation_tags:
+            tag_list = [t.strip() for t in req.allocation_tags.split(",") if t.strip()]
+            if tag_list:
+                scan["progress"] = "Analyzing cost allocation by tags..."
+                try:
+                    from finxcloud.analyzer.tags import TagCostAllocator
+                    tag_allocator = TagCostAllocator(session)
+                    tag_allocation_data = tag_allocator.get_cost_by_tags(tag_list, req.days)
+                except Exception:
+                    log.exception("Tag allocation analysis failed")
+
         # Utilization
         utilization_analyzer = None
         if not req.skip_utilization:
@@ -423,6 +472,7 @@ def _run_scan(scan_id: str, req: ScanRequest) -> None:
             "budget": budget_data,
             "trends": trends_data,
             "commitments": commitments_data,
+            "tag_allocation": tag_allocation_data,
             "s3_keys": s3_keys,
         }
 

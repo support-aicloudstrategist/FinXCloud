@@ -453,6 +453,12 @@
             <input type="number" id="days" value="30" min="1" max="365">
           </div>
         </div>
+        <div class="form-grid" style="margin-top:0.5rem;">
+          <div class="form-group">
+            <label for="allocationTags">Cost Allocation Tags</label>
+            <input type="text" id="allocationTags" placeholder="e.g. Team,Project,Environment">
+          </div>
+        </div>
         <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;">
           <div class="checkbox-group">
             <input type="checkbox" id="orgScan">
@@ -480,6 +486,7 @@
       <!-- Action bar -->
       <div style="display:flex;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap;">
         <button class="btn btn-green btn-sm" onclick="openEmailModal()">Send Report</button>
+        <button class="btn btn-primary btn-sm" onclick="downloadPDF()">Download PDF</button>
         <button class="btn btn-outline btn-sm" onclick="switchTab('scan')">New Scan</button>
       </div>
 
@@ -560,6 +567,12 @@
           <h3>Commitment Coverage</h3>
           <canvas id="chartCommitments"></canvas>
         </div>
+      </div>
+
+      <!-- Tag-based Cost Allocation -->
+      <div class="table-panel" id="tagAllocationPanel" style="display:none;">
+        <h3>Cost Allocation by Tags</h3>
+        <div id="tagAllocationContent"></div>
       </div>
 
       <!-- Recommendations -->
@@ -969,6 +982,7 @@ document.getElementById('scanForm').addEventListener('submit', async (e) => {
     days: parseInt(document.getElementById('days').value) || 30,
     org_scan: document.getElementById('orgScan').checked,
     skip_utilization: document.getElementById('skipUtil').checked,
+    allocation_tags: document.getElementById('allocationTags').value || null,
     stored_account_id: storedAccountId || null,
   };
 
@@ -1113,7 +1127,54 @@ function renderDashboard(data) {
     </div>`;
   });
 
+  // Tag-based cost allocation
+  renderTagAllocation(data.tag_allocation);
+
   document.getElementById('dashboard').classList.add('show');
+}
+
+function renderTagAllocation(tagData) {
+  const panel = document.getElementById('tagAllocationPanel');
+  const content = document.getElementById('tagAllocationContent');
+  if (!tagData || !tagData.by_tag || tagData.by_tag.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+  content.innerHTML = '';
+  tagData.by_tag.forEach(tg => {
+    let html = `<h4 style="margin:0.75rem 0 0.5rem;color:var(--primary);">Tag: ${esc(tg.tag_key)}</h4>`;
+    html += `<table><thead><tr><th>Tag Value</th><th>Amount (30d)</th><th>% of Total</th></tr></thead><tbody>`;
+    const total = tg.total || 1;
+    (tg.values || []).forEach(v => {
+      const pct = ((v.amount / total) * 100).toFixed(1);
+      html += `<tr><td>${esc(v.value)}</td><td class="amount-cost">$${v.amount.toFixed(2)}</td><td>${pct}%</td></tr>`;
+    });
+    html += `</tbody></table>`;
+    content.innerHTML += html;
+  });
+}
+
+async function downloadPDF() {
+  if (!currentScanId) { alert('No scan results available.'); return; }
+  try {
+    const res = await fetch(`/api/scan/${currentScanId}/pdf`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to generate PDF');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'finxcloud_report.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('PDF download failed: ' + err.message);
+  }
 }
 
 function destroyChart(key) {
