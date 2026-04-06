@@ -40,6 +40,20 @@
 
   .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 
+  /* Nav tabs */
+  .nav-tabs {
+    display: flex; gap: 0; margin-bottom: 1.5rem; border-bottom: 2px solid var(--gray-200);
+  }
+  .nav-tab {
+    padding: 0.6rem 1.25rem; cursor: pointer; font-size: 0.9rem; font-weight: 600;
+    color: var(--gray-500); border-bottom: 2px solid transparent; margin-bottom: -2px;
+    background: none; border-top: none; border-left: none; border-right: none;
+  }
+  .nav-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .nav-tab:hover { color: var(--gray-700); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
   /* Scan Form */
   .scan-panel {
     background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
@@ -54,12 +68,12 @@
     display: block; font-size: 0.8rem; font-weight: 600;
     color: var(--gray-700); margin-bottom: 0.25rem;
   }
-  .form-group input, .form-group select {
+  .form-group input, .form-group select, .form-group textarea {
     width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--gray-300);
     border-radius: 6px; font-size: 0.9rem; outline: none;
     transition: border-color 0.2s;
   }
-  .form-group input:focus { border-color: var(--primary); }
+  .form-group input:focus, .form-group select:focus { border-color: var(--primary); }
   .checkbox-group {
     display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;
   }
@@ -74,6 +88,15 @@
   .btn-primary { background: var(--primary); color: #fff; }
   .btn-primary:hover { background: var(--primary-hover); }
   .btn-primary:disabled { background: var(--gray-300); cursor: not-allowed; }
+  .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.8rem; }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-danger:hover { background: #b91c1c; }
+  .btn-green { background: var(--green); color: #fff; }
+  .btn-green:hover { background: #15803d; }
+  .btn-outline {
+    background: #fff; color: var(--primary); border: 1px solid var(--primary);
+  }
+  .btn-outline:hover { background: #eff6ff; }
 
   /* Progress */
   .progress-bar {
@@ -93,6 +116,11 @@
     background: var(--red-bg); border-radius: 6px; color: var(--red); font-size: 0.9rem;
   }
   .error-msg.show { display: block; }
+  .success-msg {
+    display: none; margin-top: 0.75rem; padding: 0.75rem 1rem;
+    background: var(--green-bg); border-radius: 6px; color: var(--green); font-size: 0.9rem;
+  }
+  .success-msg.show { display: block; }
 
   /* Dashboard (hidden until results) */
   #dashboard { display: none; }
@@ -193,6 +221,41 @@
   }
   .user-bar .btn-logout:hover { background: rgba(255,255,255,0.25); }
 
+  /* Account cards */
+  .account-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1rem; margin-bottom: 1.5rem;
+  }
+  .account-card {
+    background: #fff; border-radius: var(--radius); padding: 1.25rem;
+    box-shadow: var(--shadow); cursor: pointer; transition: box-shadow 0.2s;
+  }
+  .account-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+  .account-card .acct-name { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.25rem; }
+  .account-card .acct-meta { font-size: 0.85rem; color: var(--gray-500); }
+  .account-card .acct-actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 500;
+    background: rgba(0,0,0,0.4); align-items: center; justify-content: center;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: #fff; border-radius: var(--radius); padding: 2rem;
+    max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  }
+  .modal h2 { margin-bottom: 1rem; font-size: 1.2rem; }
+  .modal .form-group { margin-bottom: 0.75rem; }
+  .modal-actions { display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end; }
+
+  /* Email panel */
+  .email-panel {
+    background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 1.5rem; margin-bottom: 1.5rem;
+  }
+
   @media (max-width: 640px) {
     .container { padding: 0.75rem; }
     .chart-grid { grid-template-columns: 1fr; }
@@ -221,6 +284,90 @@
   </div>
 </div>
 
+<!-- Add Account Modal -->
+<div class="modal-overlay" id="addAccountModal">
+  <div class="modal">
+    <h2 id="accountModalTitle">Add AWS Account</h2>
+    <form id="accountForm">
+      <input type="hidden" id="editAccountId">
+      <div class="form-group">
+        <label for="acctName">Account Name *</label>
+        <input type="text" id="acctName" required placeholder="e.g. Production">
+      </div>
+      <div class="form-group">
+        <label for="acctAccessKey">AWS Access Key ID *</label>
+        <input type="text" id="acctAccessKey" required placeholder="AKIA...">
+      </div>
+      <div class="form-group">
+        <label for="acctSecretKey">AWS Secret Access Key *</label>
+        <input type="password" id="acctSecretKey" required placeholder="Secret key">
+      </div>
+      <div class="form-group">
+        <label for="acctRegion">Default Region</label>
+        <select id="acctRegion">
+          <option value="us-east-1" selected>us-east-1</option>
+          <option value="us-east-2">us-east-2</option>
+          <option value="us-west-1">us-west-1</option>
+          <option value="us-west-2">us-west-2</option>
+          <option value="eu-west-1">eu-west-1</option>
+          <option value="eu-central-1">eu-central-1</option>
+          <option value="ap-south-1">ap-south-1</option>
+          <option value="ap-southeast-1">ap-southeast-1</option>
+          <option value="ap-northeast-1">ap-northeast-1</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="acctRoleArn">IAM Role ARN (optional, for cross-account)</label>
+        <input type="text" id="acctRoleArn" placeholder="arn:aws:iam::123456789012:role/RoleName">
+      </div>
+      <div class="checkbox-group">
+        <input type="checkbox" id="acctOrgScan">
+        <label for="acctOrgScan">Scan all Organization accounts</label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="closeAccountModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="saveAccountBtn">Save Account</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Email Modal -->
+<div class="modal-overlay" id="emailModal">
+  <div class="modal">
+    <h2>Send Report via Email</h2>
+    <form id="emailForm">
+      <div class="form-group">
+        <label for="emailTo">Recipient Email(s) * (comma-separated)</label>
+        <input type="text" id="emailTo" required placeholder="user@example.com">
+      </div>
+      <div class="form-group">
+        <label for="emailSubject">Subject</label>
+        <input type="text" id="emailSubject" value="FinXCloud Cost Optimization Report">
+      </div>
+      <div class="form-group">
+        <label for="emailMethod">Send Method</label>
+        <select id="emailMethod">
+          <option value="ses">AWS SES (uses scan account credentials)</option>
+          <option value="smtp">SMTP (server-configured)</option>
+        </select>
+      </div>
+      <div id="sesFields">
+        <div class="form-group">
+          <label for="emailFrom">From Address (SES verified)</label>
+          <input type="text" id="emailFrom" placeholder="noreply@yourdomain.com">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="closeEmailModal()">Cancel</button>
+        <button type="submit" class="btn btn-green" id="sendEmailBtn">Send Report</button>
+      </div>
+    </form>
+    <div class="success-msg" id="emailSuccess"></div>
+    <div class="error-msg" id="emailError"></div>
+  </div>
+</div>
+
 <div class="header">
   <h1>FinXCloud Dashboard
     <span class="user-bar" id="userBar" style="display:none;">
@@ -233,147 +380,191 @@
 
 <div class="container">
 
-  <!-- Scan Form -->
-  <div class="scan-panel">
-    <h2>Run a New Scan</h2>
-    <form id="scanForm">
-      <div class="form-grid">
-        <div class="form-group">
-          <label for="accessKey">AWS Access Key ID *</label>
-          <input type="text" id="accessKey" required placeholder="AKIA...">
-        </div>
-        <div class="form-group">
-          <label for="secretKey">AWS Secret Access Key *</label>
-          <input type="password" id="secretKey" required placeholder="Secret key">
-        </div>
-        <div class="form-group">
-          <label for="sessionToken">Session Token (optional)</label>
-          <input type="text" id="sessionToken" placeholder="Optional">
-        </div>
-        <div class="form-group">
-          <label for="region">Default Region</label>
-          <select id="region">
-            <option value="us-east-1" selected>us-east-1</option>
-            <option value="us-east-2">us-east-2</option>
-            <option value="us-west-1">us-west-1</option>
-            <option value="us-west-2">us-west-2</option>
-            <option value="eu-west-1">eu-west-1</option>
-            <option value="eu-central-1">eu-central-1</option>
-            <option value="ap-south-1">ap-south-1</option>
-            <option value="ap-southeast-1">ap-southeast-1</option>
-            <option value="ap-northeast-1">ap-northeast-1</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="regions">Regions to Scan (comma-separated, blank=all)</label>
-          <input type="text" id="regions" placeholder="e.g. us-east-1,eu-west-1">
-        </div>
-        <div class="form-group">
-          <label for="days">Lookback Period (days)</label>
-          <input type="number" id="days" value="30" min="1" max="365">
-        </div>
-      </div>
-      <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;">
-        <div class="checkbox-group">
-          <input type="checkbox" id="orgScan">
-          <label for="orgScan">Scan all Organization accounts</label>
-        </div>
-        <div class="checkbox-group">
-          <input type="checkbox" id="skipUtil">
-          <label for="skipUtil">Skip utilization checks (faster)</label>
-        </div>
-        <button type="submit" class="btn btn-primary" id="scanBtn">Start Scan</button>
-      </div>
-    </form>
-    <div class="progress-bar" id="progressBar">
-      <div class="spinner"></div>
-      <span id="progressText">Initializing...</span>
-    </div>
-    <div class="error-msg" id="errorMsg"></div>
+  <!-- Navigation Tabs -->
+  <div class="nav-tabs" id="navTabs">
+    <button class="nav-tab active" data-tab="accounts">Accounts</button>
+    <button class="nav-tab" data-tab="scan">New Scan</button>
+    <button class="nav-tab" data-tab="results" id="resultsTab" style="display:none;">Dashboard</button>
   </div>
 
-  <!-- Dashboard -->
-  <div id="dashboard">
-
-    <!-- Metric Cards -->
-    <div class="metrics">
-      <div class="card">
-        <div class="label">Total Resources</div>
-        <div class="value" id="metricResources">0</div>
-      </div>
-      <div class="card">
-        <div class="label">30-Day Cost</div>
-        <div class="value cost" id="metricCost">$0.00</div>
-      </div>
-      <div class="card">
-        <div class="label">Potential Savings</div>
-        <div class="value savings" id="metricSavings">$0.00</div>
-      </div>
-      <div class="card">
-        <div class="label">Savings Potential</div>
-        <div class="value savings" id="metricSavingsPct">0%</div>
-      </div>
-      <div class="card">
-        <div class="label">Quick Wins</div>
-        <div class="value" id="metricQuickWins">0</div>
-      </div>
+  <!-- Tab: Accounts -->
+  <div class="tab-content active" id="tab-accounts">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+      <h2 style="font-size:1.1rem;color:var(--gray-700);">AWS Accounts</h2>
+      <button class="btn btn-primary btn-sm" onclick="openAddAccountModal()">+ Add Account</button>
     </div>
-
-    <!-- Charts -->
-    <div class="chart-grid">
-      <div class="chart-panel">
-        <h3>Cost by Service</h3>
-        <canvas id="chartService"></canvas>
-      </div>
-      <div class="chart-panel">
-        <h3>Cost by Region</h3>
-        <canvas id="chartRegion"></canvas>
-      </div>
-      <div class="chart-panel">
-        <h3>Daily Cost Trend</h3>
-        <canvas id="chartTrend"></canvas>
-      </div>
-      <div class="chart-panel">
-        <h3>Savings by Category</h3>
-        <canvas id="chartSavings"></canvas>
-      </div>
+    <div class="account-grid" id="accountGrid">
+      <p style="color:var(--gray-500);grid-column:1/-1;text-align:center;padding:2rem;">
+        No accounts yet. Click "Add Account" to get started.
+      </p>
     </div>
+  </div>
 
-    <!-- Recommendations -->
-    <div class="table-panel">
-      <h3>Top Recommendations</h3>
-      <table>
-        <thead>
-          <tr><th>#</th><th>Category</th><th>Recommendation</th><th>Effort</th><th>Est. Savings/mo</th></tr>
-        </thead>
-        <tbody id="recsBody"></tbody>
-      </table>
+  <!-- Tab: New Scan -->
+  <div class="tab-content" id="tab-scan">
+    <div class="scan-panel">
+      <h2>Run a New Scan</h2>
+      <div style="margin-bottom:1rem;">
+        <label style="font-size:0.8rem;font-weight:600;color:var(--gray-700);">Scan from saved account</label>
+        <select id="scanAccountSelect" style="width:100%;padding:0.5rem 0.75rem;border:1px solid var(--gray-300);border-radius:6px;font-size:0.9rem;margin-top:0.25rem;">
+          <option value="">-- Enter credentials manually --</option>
+        </select>
+      </div>
+      <form id="scanForm">
+        <div class="form-grid" id="manualCredFields">
+          <div class="form-group">
+            <label for="accessKey">AWS Access Key ID *</label>
+            <input type="text" id="accessKey" placeholder="AKIA...">
+          </div>
+          <div class="form-group">
+            <label for="secretKey">AWS Secret Access Key *</label>
+            <input type="password" id="secretKey" placeholder="Secret key">
+          </div>
+          <div class="form-group">
+            <label for="sessionToken">Session Token (optional)</label>
+            <input type="text" id="sessionToken" placeholder="Optional">
+          </div>
+          <div class="form-group">
+            <label for="roleArn">IAM Role ARN (optional)</label>
+            <input type="text" id="roleArn" placeholder="arn:aws:iam::123456789012:role/...">
+          </div>
+          <div class="form-group">
+            <label for="region">Default Region</label>
+            <select id="region">
+              <option value="us-east-1" selected>us-east-1</option>
+              <option value="us-east-2">us-east-2</option>
+              <option value="us-west-1">us-west-1</option>
+              <option value="us-west-2">us-west-2</option>
+              <option value="eu-west-1">eu-west-1</option>
+              <option value="eu-central-1">eu-central-1</option>
+              <option value="ap-south-1">ap-south-1</option>
+              <option value="ap-southeast-1">ap-southeast-1</option>
+              <option value="ap-northeast-1">ap-northeast-1</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="regions">Regions to Scan (comma-separated, blank=all)</label>
+            <input type="text" id="regions" placeholder="e.g. us-east-1,eu-west-1">
+          </div>
+          <div class="form-group">
+            <label for="days">Lookback Period (days)</label>
+            <input type="number" id="days" value="30" min="1" max="365">
+          </div>
+        </div>
+        <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;">
+          <div class="checkbox-group">
+            <input type="checkbox" id="orgScan">
+            <label for="orgScan">Scan all Organization accounts</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="skipUtil">
+            <label for="skipUtil">Skip utilization checks (faster)</label>
+          </div>
+          <button type="submit" class="btn btn-primary" id="scanBtn">Start Scan</button>
+        </div>
+      </form>
+      <div class="progress-bar" id="progressBar">
+        <div class="spinner"></div>
+        <span id="progressText">Initializing...</span>
+      </div>
+      <div class="error-msg" id="errorMsg"></div>
     </div>
+  </div>
 
-    <!-- Resource Inventory -->
-    <div class="table-panel">
-      <h3>Resource Inventory</h3>
-      <table>
-        <thead>
-          <tr><th>Resource Type</th><th>Count</th></tr>
-        </thead>
-        <tbody id="resourcesBody"></tbody>
-      </table>
+  <!-- Tab: Results / Dashboard -->
+  <div class="tab-content" id="tab-results">
+    <div id="dashboard">
+
+      <!-- Action bar -->
+      <div style="display:flex;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap;">
+        <button class="btn btn-green btn-sm" onclick="openEmailModal()">Send Report</button>
+        <button class="btn btn-outline btn-sm" onclick="switchTab('scan')">New Scan</button>
+      </div>
+
+      <!-- Metric Cards -->
+      <div class="metrics">
+        <div class="card">
+          <div class="label">Total Resources</div>
+          <div class="value" id="metricResources">0</div>
+        </div>
+        <div class="card">
+          <div class="label">30-Day Cost</div>
+          <div class="value cost" id="metricCost">$0.00</div>
+        </div>
+        <div class="card">
+          <div class="label">Potential Savings</div>
+          <div class="value savings" id="metricSavings">$0.00</div>
+        </div>
+        <div class="card">
+          <div class="label">Savings Potential</div>
+          <div class="value savings" id="metricSavingsPct">0%</div>
+        </div>
+        <div class="card">
+          <div class="label">Quick Wins</div>
+          <div class="value" id="metricQuickWins">0</div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="chart-grid">
+        <div class="chart-panel">
+          <h3>Cost by Service</h3>
+          <canvas id="chartService"></canvas>
+        </div>
+        <div class="chart-panel">
+          <h3>Cost by Region</h3>
+          <canvas id="chartRegion"></canvas>
+        </div>
+        <div class="chart-panel">
+          <h3>Daily Cost Trend</h3>
+          <canvas id="chartTrend"></canvas>
+        </div>
+        <div class="chart-panel">
+          <h3>Savings by Category</h3>
+          <canvas id="chartSavings"></canvas>
+        </div>
+      </div>
+
+      <!-- Recommendations -->
+      <div class="table-panel">
+        <h3>Top Recommendations</h3>
+        <table>
+          <thead>
+            <tr><th>#</th><th>Category</th><th>Recommendation</th><th>Effort</th><th>Est. Savings/mo</th></tr>
+          </thead>
+          <tbody id="recsBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Resource Inventory -->
+      <div class="table-panel">
+        <h3>Resource Inventory</h3>
+        <table>
+          <thead>
+            <tr><th>Resource Type</th><th>Count</th></tr>
+          </thead>
+          <tbody id="resourcesBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Roadmap -->
+      <div id="roadmapSection">
+        <h3 style="margin-bottom:0.75rem;color:var(--gray-700);">Implementation Roadmap</h3>
+        <div id="roadmapCards"></div>
+      </div>
+
     </div>
-
-    <!-- Roadmap -->
-    <div id="roadmapSection">
-      <h3 style="margin-bottom:0.75rem;color:var(--gray-700);">Implementation Roadmap</h3>
-      <div id="roadmapCards"></div>
-    </div>
-
   </div>
 </div>
 
 <script>
-// --- Auth ---
+// --- State ---
 let isAuthenticated = false;
+let currentScanId = null;
+let currentAccountId = null;
+let lastScanResult = null;
 
+// --- Auth ---
 async function checkAuth() {
   try {
     const res = await fetch('/api/me');
@@ -397,11 +588,11 @@ function showApp(username) {
   document.getElementById('loginOverlay').classList.add('hidden');
   document.getElementById('userBar').style.display = 'flex';
   document.getElementById('userDisplay').textContent = username;
+  loadAccounts();
 }
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  // Skip API-based login in static/embedded mode
   if (typeof FINXCLOUD_STATIC_AUTH !== 'undefined' && FINXCLOUD_STATIC_AUTH) return;
   const errorEl = document.getElementById('loginError');
   errorEl.classList.remove('show');
@@ -436,11 +627,147 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   showLogin();
 });
 
-// Check auth on load (skip if static/embedded mode)
 if (typeof FINXCLOUD_EMBEDDED_DATA === 'undefined') {
   checkAuth();
 }
 
+// --- Tab Navigation ---
+function switchTab(tabName) {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+  document.getElementById('tab-' + tabName).classList.add('active');
+}
+
+document.querySelectorAll('.nav-tab').forEach(tab => {
+  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+});
+
+// --- Account Management ---
+async function loadAccounts() {
+  try {
+    const res = await fetch('/api/accounts');
+    if (!res.ok) return;
+    const accounts = await res.json();
+    renderAccountGrid(accounts);
+    populateAccountSelect(accounts);
+  } catch {}
+}
+
+function renderAccountGrid(accounts) {
+  const grid = document.getElementById('accountGrid');
+  if (!accounts.length) {
+    grid.innerHTML = '<p style="color:var(--gray-500);grid-column:1/-1;text-align:center;padding:2rem;">No accounts yet. Click "Add Account" to get started.</p>';
+    return;
+  }
+  grid.innerHTML = accounts.map(a => `
+    <div class="account-card">
+      <div class="acct-name">${esc(a.name)}</div>
+      <div class="acct-meta">Region: ${esc(a.region)}${a.role_arn ? ' | IAM Role' : ''}${a.org_scan ? ' | Org Scan' : ''}</div>
+      <div class="acct-meta">Last scan: ${a.last_scan_at ? new Date(a.last_scan_at).toLocaleString() : 'Never'}</div>
+      <div class="acct-actions">
+        <button class="btn btn-primary btn-sm" onclick="scanAccount('${a.id}')">Scan</button>
+        <button class="btn btn-outline btn-sm" onclick="viewAccountDashboard('${a.id}')">View Latest</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteAccountUI('${a.id}','${esc(a.name)}')">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function populateAccountSelect(accounts) {
+  const sel = document.getElementById('scanAccountSelect');
+  sel.innerHTML = '<option value="">-- Enter credentials manually --</option>';
+  accounts.forEach(a => {
+    sel.innerHTML += `<option value="${a.id}">${esc(a.name)} (${a.region})</option>`;
+  });
+}
+
+document.getElementById('scanAccountSelect').addEventListener('change', function() {
+  const manual = document.getElementById('manualCredFields');
+  if (this.value) {
+    manual.style.opacity = '0.5';
+    manual.querySelectorAll('input').forEach(i => i.removeAttribute('required'));
+  } else {
+    manual.style.opacity = '1';
+    document.getElementById('accessKey').setAttribute('required', '');
+    document.getElementById('secretKey').setAttribute('required', '');
+  }
+});
+
+function openAddAccountModal() {
+  document.getElementById('editAccountId').value = '';
+  document.getElementById('accountModalTitle').textContent = 'Add AWS Account';
+  document.getElementById('accountForm').reset();
+  document.getElementById('addAccountModal').classList.add('show');
+}
+
+function closeAccountModal() {
+  document.getElementById('addAccountModal').classList.remove('show');
+}
+
+document.getElementById('accountForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const editId = document.getElementById('editAccountId').value;
+  const body = {
+    name: document.getElementById('acctName').value,
+    access_key: document.getElementById('acctAccessKey').value,
+    secret_key: document.getElementById('acctSecretKey').value,
+    region: document.getElementById('acctRegion').value,
+    role_arn: document.getElementById('acctRoleArn').value || null,
+    org_scan: document.getElementById('acctOrgScan').checked,
+  };
+
+  try {
+    let res;
+    if (editId) {
+      res = await fetch(`/api/accounts/${editId}`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+    } else {
+      res = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+    }
+    if (res.ok) {
+      closeAccountModal();
+      loadAccounts();
+    }
+  } catch {}
+});
+
+async function deleteAccountUI(id, name) {
+  if (!confirm(`Delete account "${name}"? This also deletes all saved scan results.`)) return;
+  await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+  loadAccounts();
+}
+
+async function scanAccount(accountId) {
+  currentAccountId = accountId;
+  document.getElementById('scanAccountSelect').value = accountId;
+  document.getElementById('manualCredFields').style.opacity = '0.5';
+  switchTab('scan');
+}
+
+async function viewAccountDashboard(accountId) {
+  try {
+    const res = await fetch(`/api/accounts/${accountId}/latest-scan`);
+    if (!res.ok) { alert('No scans found for this account.'); return; }
+    const scan = await res.json();
+    if (scan.result) {
+      lastScanResult = scan.result;
+      currentAccountId = accountId;
+      renderDashboard(scan.result);
+      document.getElementById('resultsTab').style.display = '';
+      switchTab('results');
+    }
+  } catch { alert('Failed to load scan results.'); }
+}
+
+// --- Scan ---
 const COLORS = [
   '#2563eb','#16a34a','#ea580c','#9333ea','#dc2626',
   '#0891b2','#ca8a04','#4f46e5','#db2777','#059669'
@@ -457,17 +784,20 @@ document.getElementById('scanForm').addEventListener('submit', async (e) => {
   btn.disabled = true;
   progress.classList.add('show');
   errorEl.classList.remove('show');
-  document.getElementById('dashboard').classList.remove('show');
+
+  const storedAccountId = document.getElementById('scanAccountSelect').value;
 
   const body = {
-    access_key: document.getElementById('accessKey').value,
-    secret_key: document.getElementById('secretKey').value,
+    access_key: document.getElementById('accessKey').value || 'placeholder',
+    secret_key: document.getElementById('secretKey').value || 'placeholder',
     session_token: document.getElementById('sessionToken').value || null,
+    role_arn: document.getElementById('roleArn').value || null,
     region: document.getElementById('region').value,
     regions: document.getElementById('regions').value || null,
     days: parseInt(document.getElementById('days').value) || 30,
     org_scan: document.getElementById('orgScan').checked,
     skip_utilization: document.getElementById('skipUtil').checked,
+    stored_account_id: storedAccountId || null,
   };
 
   try {
@@ -477,20 +807,25 @@ document.getElementById('scanForm').addEventListener('submit', async (e) => {
       body: JSON.stringify(body),
     });
     const startData = await startRes.json();
-    const scanId = startData.scan_id;
+    if (!startRes.ok) throw new Error(startData.detail || 'Failed to start scan');
+    currentScanId = startData.scan_id;
+    if (storedAccountId) currentAccountId = storedAccountId;
 
-    // Poll for status
     while (true) {
       await new Promise(r => setTimeout(r, 2000));
-      const statusRes = await fetch(`/api/scan/${scanId}`);
+      const statusRes = await fetch(`/api/scan/${currentScanId}`);
       const statusData = await statusRes.json();
       document.getElementById('progressText').textContent = statusData.progress || 'Working...';
 
       if (statusData.status === 'done') {
-        const resultsRes = await fetch(`/api/scan/${scanId}/results`);
+        const resultsRes = await fetch(`/api/scan/${currentScanId}/results`);
         const results = await resultsRes.json();
+        lastScanResult = results;
         renderDashboard(results);
         progress.classList.remove('show');
+        document.getElementById('resultsTab').style.display = '';
+        switchTab('results');
+        loadAccounts();
         break;
       }
       if (statusData.status === 'failed') {
@@ -510,20 +845,17 @@ function renderDashboard(data) {
   const { summary, detailed, roadmap, recommendations } = data;
   const ov = summary.overview;
 
-  // Metrics
   document.getElementById('metricResources').textContent = ov.total_resources.toLocaleString();
   document.getElementById('metricCost').textContent = '$' + ov.total_cost_30d.toFixed(2);
   document.getElementById('metricSavings').textContent = '$' + ov.total_potential_savings.toFixed(2);
   document.getElementById('metricSavingsPct').textContent = ov.savings_percentage + '%';
   document.getElementById('metricQuickWins').textContent = summary.quick_wins_count;
 
-  // Charts
   renderServiceChart(detailed.cost_breakdown.by_service);
   renderRegionChart(detailed.cost_breakdown.by_region);
   renderTrendChart(detailed.cost_breakdown.daily_trend);
   renderSavingsChart(summary.savings_by_category);
 
-  // Recommendations table
   const recsBody = document.getElementById('recsBody');
   recsBody.innerHTML = '';
   (summary.top_recommendations || []).forEach((rec, i) => {
@@ -531,31 +863,29 @@ function renderDashboard(data) {
                         rec.effort_level === 'medium' ? 'badge-medium' : 'badge-high';
     recsBody.innerHTML += `<tr>
       <td>${i+1}</td>
-      <td>${rec.category || ''}</td>
-      <td>${rec.title || ''}</td>
-      <td><span class="badge ${effortClass}">${rec.effort_level || ''}</span></td>
+      <td>${esc(rec.category || '')}</td>
+      <td>${esc(rec.title || '')}</td>
+      <td><span class="badge ${effortClass}">${esc(rec.effort_level || '')}</span></td>
       <td class="amount-savings">$${(rec.estimated_monthly_savings || 0).toFixed(2)}</td>
     </tr>`;
   });
 
-  // Resource inventory
   const resBody = document.getElementById('resourcesBody');
   resBody.innerHTML = '';
   const counts = detailed.resource_counts || {};
   Object.entries(counts).sort((a,b) => b[1]-a[1]).forEach(([type, count]) => {
-    resBody.innerHTML += `<tr><td>${type}</td><td>${count}</td></tr>`;
+    resBody.innerHTML += `<tr><td>${esc(type)}</td><td>${count}</td></tr>`;
   });
 
-  // Roadmap
   const roadmapCards = document.getElementById('roadmapCards');
   roadmapCards.innerHTML = '';
   (roadmap.phases || []).forEach(phase => {
     roadmapCards.innerHTML += `<div class="roadmap-phase">
       <div class="phase-head">
-        <h4>Phase ${phase.phase}: ${phase.name}</h4>
+        <h4>Phase ${phase.phase}: ${esc(phase.name)}</h4>
         <span class="badge badge-low">$${phase.total_estimated_monthly_savings.toFixed(2)} savings/mo</span>
       </div>
-      <p class="phase-meta">${phase.item_count} item${phase.item_count!==1?'s':''} &middot; Timeline: ${phase.timeline} &middot; Effort: ${phase.effort_level}</p>
+      <p class="phase-meta">${phase.item_count} item${phase.item_count!==1?'s':''} &middot; Timeline: ${esc(phase.timeline)} &middot; Effort: ${esc(phase.effort_level)}</p>
     </div>`;
   });
 
@@ -648,6 +978,64 @@ function renderSavingsChart(savingsByCat) {
       scales: { x: { beginAtZero: true, ticks: { callback: v => '$' + v.toFixed(0) } } },
     },
   });
+}
+
+// --- Email ---
+function openEmailModal() {
+  document.getElementById('emailSuccess').classList.remove('show');
+  document.getElementById('emailError').classList.remove('show');
+  document.getElementById('emailModal').classList.add('show');
+}
+
+function closeEmailModal() {
+  document.getElementById('emailModal').classList.remove('show');
+}
+
+document.getElementById('emailForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const successEl = document.getElementById('emailSuccess');
+  const errorEl = document.getElementById('emailError');
+  const btn = document.getElementById('sendEmailBtn');
+  successEl.classList.remove('show');
+  errorEl.classList.remove('show');
+  btn.disabled = true;
+
+  const toStr = document.getElementById('emailTo').value;
+  const body = {
+    to_addresses: toStr.split(',').map(s => s.trim()).filter(Boolean),
+    subject: document.getElementById('emailSubject').value,
+    method: document.getElementById('emailMethod').value,
+    from_address: document.getElementById('emailFrom').value || null,
+    scan_id: currentScanId,
+    account_id: currentAccountId,
+  };
+
+  try {
+    const res = await fetch('/api/email/send-report', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      successEl.textContent = data.message || 'Report sent successfully!';
+      successEl.classList.add('show');
+    } else {
+      throw new Error(data.detail || 'Failed to send email');
+    }
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.add('show');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// --- Utilities ---
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
 }
 </script>
 

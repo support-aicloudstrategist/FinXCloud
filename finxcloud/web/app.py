@@ -14,6 +14,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from finxcloud.web.auth import authenticate, require_auth
+from finxcloud.web.storage import (
+    create_account,
+    delete_account,
+    get_account,
+    get_latest_scan,
+    list_accounts,
+    list_scans,
+    save_scan_result,
+    update_account,
+)
 from finxcloud.auth.credentials import AWSCredentials, create_session, validate_credentials
 from finxcloud.output.s3_writer import S3Writer
 from finxcloud.auth.organizations import is_organizations_account, list_member_accounts, assume_role_session
@@ -35,7 +45,7 @@ logging.basicConfig(level=logging.INFO)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-app = FastAPI(title="FinXCloud Dashboard", version="0.1.0")
+app = FastAPI(title="FinXCloud Dashboard", version="0.2.0")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # In-memory scan state (PoC — single concurrent scan)
@@ -53,6 +63,7 @@ class ScanRequest(BaseModel):
     secret_key: str
     session_token: str | None = None
     region: str = "us-east-1"
+    role_arn: str | None = None
     org_scan: bool = False
     org_role: str = "OrganizationAccountAccessRole"
     days: int = 30
@@ -60,6 +71,37 @@ class ScanRequest(BaseModel):
     skip_utilization: bool = False
     output_s3_bucket: str | None = None
     output_s3_prefix: str = ""
+    stored_account_id: str | None = None
+
+
+class AccountRequest(BaseModel):
+    name: str
+    access_key: str
+    secret_key: str
+    region: str = "us-east-1"
+    role_arn: str | None = None
+    org_scan: bool = False
+
+
+class AccountUpdateRequest(BaseModel):
+    name: str | None = None
+    access_key: str | None = None
+    secret_key: str | None = None
+    region: str | None = None
+    role_arn: str | None = None
+    org_scan: bool | None = None
+
+
+class EmailReportRequest(BaseModel):
+    to_addresses: list[str]
+    subject: str | None = None
+    scan_id: str | None = None
+    account_id: str | None = None
+    method: str = "ses"
+    from_address: str | None = None
+    aws_access_key: str | None = None
+    aws_secret_key: str | None = None
+    aws_region: str | None = None
 
 
 @app.get("/")
@@ -95,10 +137,96 @@ async def me(user: dict = Depends(require_auth)):
     return {"username": user["sub"]}
 
 
+# ---------------------------------------------------------------------------
+# Account management
+# ---------------------------------------------------------------------------
+
+@app.get("/api/accounts")
+async def api_list_accounts(_user: dict = Depends(require_auth)):
+    return list_accounts()
+
+
+@app.post("/api/accounts")
+async def api_create_account(req: AccountRequest, _user: dict = Depends(require_auth)):
+    acct = create_account(
+        name=req.name,
+        access_key=req.access_key,
+        secret_key=req.secret_key,
+        region=req.region,
+        role_arn=req.role_arn,
+        org_scan=req.org_scan,
+    )
+    return acct
+
+
+@app.get("/api/accounts/{account_id}")
+async def api_get_account(account_id: str, _user: dict = Depends(require_auth)):
+    acct = get_account(account_id)
+    if not acct:
+        raise HTTPException(status_code=404, detail="Account not found")
+    # Mask secrets in response
+    acct["access_key"] = acct["access_key"][:4] + "****" + acct["access_key"][-4:]
+    acct["secret_key"] = "****"
+    return acct
+
+
+@app.patch("/api/accounts/{account_id}")
+async def api_update_account(account_id: str, req: AccountUpdateRequest, _user: dict = Depends(require_auth)):
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    ok = update_account(account_id, **fields)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Account not found or nothing to update")
+    return {"status": "ok"}
+
+
+@app.delete("/api/accounts/{account_id}")
+async def api_delete_account(account_id: str, _user: dict = Depends(require_auth)):
+    ok = delete_account(account_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return {"status": "ok"}
+
+
+@app.get("/api/accounts/{account_id}/scans")
+async def api_list_scans(account_id: str, _user: dict = Depends(require_auth)):
+    return list_scans(account_id)
+
+
+@app.get("/api/accounts/{account_id}/latest-scan")
+async def api_latest_scan(account_id: str, _user: dict = Depends(require_auth)):
+    scan = get_latest_scan(account_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="No scans found")
+    return scan
+
+
+# ---------------------------------------------------------------------------
+# Scan (updated with account + role_arn support)
+# ---------------------------------------------------------------------------
+
 @app.post("/api/scan")
 async def start_scan(req: ScanRequest, _user: dict = Depends(require_auth)):
+    # If scanning from a stored account, load credentials
+    if req.stored_account_id:
+        acct = get_account(req.stored_account_id)
+        if not acct:
+            raise HTTPException(status_code=404, detail="Stored account not found")
+        req.access_key = acct["access_key"]
+        req.secret_key = acct["secret_key"]
+        req.region = acct.get("region", req.region)
+        req.role_arn = acct.get("role_arn") or req.role_arn
+        req.org_scan = bool(acct.get("org_scan", req.org_scan))
+
     scan_id = str(uuid.uuid4())[:8]
-    _scans[scan_id] = {"status": "running", "progress": "Initializing...", "result": None, "error": None}
+    _scans[scan_id] = {
+        "status": "running",
+        "progress": "Initializing...",
+        "result": None,
+        "error": None,
+        "stored_account_id": req.stored_account_id,
+    }
     thread = threading.Thread(target=_run_scan, args=(scan_id, req), daemon=True)
     thread.start()
     return {"scan_id": scan_id, "status": "running"}
@@ -143,6 +271,7 @@ def _run_scan(scan_id: str, req: ScanRequest) -> None:
             secret_access_key=req.secret_key,
             session_token=req.session_token,
             region=req.region,
+            role_arn=req.role_arn,
         )
         session = create_session(creds)
         identity = validate_credentials(session)
@@ -240,7 +369,7 @@ def _run_scan(scan_id: str, req: ScanRequest) -> None:
             s3w = S3Writer(session, req.output_s3_bucket, req.output_s3_prefix)
             s3_keys = s3w.write_all(detailed_report, summary_report, roadmap_report)
 
-        scan["result"] = {
+        result = {
             "summary": summary_report,
             "detailed": detailed_report,
             "roadmap": roadmap_report,
@@ -249,6 +378,13 @@ def _run_scan(scan_id: str, req: ScanRequest) -> None:
             "cost_data": merged_cost_data,
             "s3_keys": s3_keys,
         }
+
+        # Persist scan result if linked to a stored account
+        stored_acct_id = scan.get("stored_account_id")
+        if stored_acct_id:
+            save_scan_result(stored_acct_id, result)
+
+        scan["result"] = result
         scan["status"] = "done"
         scan["progress"] = "Scan complete"
 
@@ -258,6 +394,108 @@ def _run_scan(scan_id: str, req: ScanRequest) -> None:
         scan["error"] = str(e)
         scan["progress"] = f"Failed: {e}"
 
+
+# ---------------------------------------------------------------------------
+# Email
+# ---------------------------------------------------------------------------
+
+@app.post("/api/email/send-report")
+async def send_report_email(req: EmailReportRequest, _user: dict = Depends(require_auth)):
+    """Send a scan report via email (SES or SMTP)."""
+    # Build report HTML from the latest scan
+    report_data = None
+
+    if req.scan_id and req.scan_id in _scans:
+        scan = _scans[req.scan_id]
+        if scan["status"] == "done":
+            report_data = scan["result"]
+
+    if not report_data and req.account_id:
+        latest = get_latest_scan(req.account_id)
+        if latest and latest.get("result"):
+            report_data = latest["result"]
+
+    if not report_data:
+        raise HTTPException(status_code=404, detail="No scan results found to send")
+
+    subject = req.subject or "FinXCloud Cost Optimization Report"
+    html_body = _build_report_email_html(report_data)
+
+    if req.method == "ses":
+        from finxcloud.email.sender import send_email_ses
+
+        ses_session = None
+        if req.aws_access_key and req.aws_secret_key:
+            import boto3
+            ses_session = boto3.Session(
+                aws_access_key_id=req.aws_access_key,
+                aws_secret_access_key=req.aws_secret_key,
+                region_name=req.aws_region or "us-east-1",
+            )
+        from_addr = req.from_address or os.environ.get("FINXCLOUD_FROM_EMAIL", "noreply@finxcloud.io")
+        ok = send_email_ses(
+            to_addresses=req.to_addresses,
+            subject=subject,
+            html_body=html_body,
+            from_address=from_addr,
+            region=req.aws_region,
+            session=ses_session,
+        )
+    else:
+        from finxcloud.email.sender import EmailConfig, send_email
+
+        config = EmailConfig()
+        ok = send_email(config, req.to_addresses, subject, html_body)
+
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to send email")
+    return {"status": "ok", "message": f"Report sent to {', '.join(req.to_addresses)}"}
+
+
+def _build_report_email_html(data: dict) -> str:
+    """Build a simple HTML email from scan results."""
+    summary = data.get("summary", {})
+    ov = summary.get("overview", {})
+    recs = summary.get("top_recommendations", [])[:10]
+
+    rows = ""
+    for r in recs:
+        rows += (
+            f"<tr><td>{r.get('category', '')}</td>"
+            f"<td>{r.get('title', '')}</td>"
+            f"<td>{r.get('effort_level', '')}</td>"
+            f"<td>${r.get('estimated_monthly_savings', 0):.2f}</td></tr>"
+        )
+
+    return f"""
+    <html>
+    <body style="font-family:Arial,sans-serif;color:#333;">
+    <h2 style="color:#1e3a5f;">FinXCloud Cost Optimization Report</h2>
+    <table style="border-collapse:collapse;margin:1em 0;">
+      <tr><td style="padding:4px 12px;font-weight:bold;">Total Resources</td><td>{ov.get('total_resources', 0)}</td></tr>
+      <tr><td style="padding:4px 12px;font-weight:bold;">30-Day Cost</td><td style="color:#dc2626;">${ov.get('total_cost_30d', 0):.2f}</td></tr>
+      <tr><td style="padding:4px 12px;font-weight:bold;">Potential Savings</td><td style="color:#16a34a;">${ov.get('total_potential_savings', 0):.2f}</td></tr>
+      <tr><td style="padding:4px 12px;font-weight:bold;">Savings %</td><td>{ov.get('savings_percentage', 0)}%</td></tr>
+    </table>
+    <h3>Top Recommendations</h3>
+    <table style="border-collapse:collapse;width:100%;">
+      <tr style="background:#f3f4f6;">
+        <th style="padding:6px 10px;text-align:left;">Category</th>
+        <th style="padding:6px 10px;text-align:left;">Recommendation</th>
+        <th style="padding:6px 10px;text-align:left;">Effort</th>
+        <th style="padding:6px 10px;text-align:left;">Est. Savings/mo</th>
+      </tr>
+      {rows}
+    </table>
+    <p style="margin-top:2em;color:#6b7280;font-size:12px;">Generated by FinXCloud</p>
+    </body>
+    </html>
+    """
+
+
+# ---------------------------------------------------------------------------
+# S3 reports
+# ---------------------------------------------------------------------------
 
 class S3ReportRequest(BaseModel):
     access_key: str

@@ -16,6 +16,7 @@ class AWSCredentials:
     session_token: Optional[str] = None
     region: str = "us-east-1"
     profile: Optional[str] = None
+    role_arn: Optional[str] = None
 
 
 def create_session(creds: AWSCredentials) -> boto3.Session:
@@ -41,11 +42,34 @@ def create_session(creds: AWSCredentials) -> boto3.Session:
             session_kwargs["aws_session_token"] = creds.session_token
 
     try:
-        return boto3.Session(**session_kwargs)
+        session = boto3.Session(**session_kwargs)
     except BotoCoreError as exc:
         raise BotoCoreError(
             f"Failed to create AWS session: {exc}"
         ) from exc
+
+    if creds.role_arn:
+        session = _assume_role(session, creds.role_arn, creds.region)
+
+    return session
+
+
+def _assume_role(
+    session: boto3.Session, role_arn: str, region: str = "us-east-1"
+) -> boto3.Session:
+    """Assume an IAM role and return a new session with temporary credentials."""
+    sts = session.client("sts")
+    response = sts.assume_role(
+        RoleArn=role_arn,
+        RoleSessionName="FinXCloud-AssumedRole",
+    )
+    temp = response["Credentials"]
+    return boto3.Session(
+        aws_access_key_id=temp["AccessKeyId"],
+        aws_secret_access_key=temp["SecretAccessKey"],
+        aws_session_token=temp["SessionToken"],
+        region_name=region,
+    )
 
 
 def validate_credentials(session: boto3.Session) -> dict:
