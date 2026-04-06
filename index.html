@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinXCloud Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --green: #16a34a;
+    --green-bg: #dcfce7;
+    --red: #dc2626;
+    --red-bg: #fee2e2;
+    --orange: #ea580c;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-500: #6b7280;
+    --gray-700: #374151;
+    --gray-900: #111827;
+    --radius: 10px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--gray-900); background: var(--gray-50); line-height: 1.6;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+    color: #fff; padding: 1.5rem 2rem;
+  }
+  .header h1 { font-size: 1.5rem; font-weight: 700; }
+  .header p { font-size: 0.9rem; opacity: 0.85; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+
+  /* Scan Form */
+  .scan-panel {
+    background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 1.5rem; margin-bottom: 1.5rem;
+  }
+  .scan-panel h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--gray-700); }
+  .form-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem; margin-bottom: 1rem;
+  }
+  .form-group label {
+    display: block; font-size: 0.8rem; font-weight: 600;
+    color: var(--gray-700); margin-bottom: 0.25rem;
+  }
+  .form-group input, .form-group select {
+    width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--gray-300);
+    border-radius: 6px; font-size: 0.9rem; outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-group input:focus { border-color: var(--primary); }
+  .checkbox-group {
+    display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;
+  }
+  .checkbox-group input { width: auto; }
+  .checkbox-group label { font-size: 0.85rem; margin-bottom: 0; }
+
+  .btn {
+    padding: 0.6rem 1.5rem; border: none; border-radius: 6px;
+    font-size: 0.95rem; font-weight: 600; cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-primary:disabled { background: var(--gray-300); cursor: not-allowed; }
+
+  /* Progress */
+  .progress-bar {
+    display: none; margin-top: 1rem; padding: 0.75rem 1rem;
+    background: #eff6ff; border-radius: 6px; font-size: 0.9rem; color: var(--primary);
+  }
+  .progress-bar.show { display: flex; align-items: center; gap: 0.75rem; }
+  .spinner {
+    width: 18px; height: 18px; border: 3px solid var(--gray-200);
+    border-top-color: var(--primary); border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-msg {
+    display: none; margin-top: 0.75rem; padding: 0.75rem 1rem;
+    background: var(--red-bg); border-radius: 6px; color: var(--red); font-size: 0.9rem;
+  }
+  .error-msg.show { display: block; }
+
+  /* Dashboard (hidden until results) */
+  #dashboard { display: none; }
+  #dashboard.show { display: block; }
+
+  /* Metric cards */
+  .metrics {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem; margin-bottom: 1.5rem;
+  }
+  .card {
+    background: #fff; border-radius: var(--radius); padding: 1.25rem;
+    box-shadow: var(--shadow);
+  }
+  .card .label { font-size: 0.8rem; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.04em; }
+  .card .value { font-size: 1.6rem; font-weight: 700; margin-top: 0.25rem; }
+  .card .value.cost { color: var(--red); }
+  .card .value.savings { color: var(--green); }
+
+  /* Chart panels */
+  .chart-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 1.5rem; margin-bottom: 1.5rem;
+  }
+  .chart-panel {
+    background: #fff; border-radius: var(--radius); padding: 1.25rem;
+    box-shadow: var(--shadow);
+  }
+  .chart-panel h3 { font-size: 1rem; color: var(--gray-700); margin-bottom: 0.75rem; }
+  .chart-panel canvas { max-height: 300px; }
+
+  /* Tables */
+  .table-panel {
+    background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
+    overflow: hidden; margin-bottom: 1.5rem;
+  }
+  .table-panel h3 {
+    font-size: 1rem; color: var(--gray-700); padding: 1rem 1.25rem 0.5rem;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.6rem 1rem; font-size: 0.9rem; }
+  th {
+    background: var(--gray-100); font-size: 0.78rem; text-transform: uppercase;
+    color: var(--gray-500); letter-spacing: 0.04em; font-weight: 600;
+  }
+  tr:not(:last-child) td { border-bottom: 1px solid var(--gray-200); }
+  .amount-cost { color: var(--red); font-weight: 600; }
+  .amount-savings { color: var(--green); font-weight: 600; }
+
+  /* Effort badges */
+  .badge {
+    display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+    font-size: 0.75rem; font-weight: 600;
+  }
+  .badge-low { background: var(--green-bg); color: var(--green); }
+  .badge-medium { background: #fef3c7; color: var(--orange); }
+  .badge-high { background: var(--red-bg); color: var(--red); }
+
+  /* Roadmap */
+  .roadmap-phase {
+    background: #fff; border-radius: var(--radius); padding: 1.25rem;
+    box-shadow: var(--shadow); margin-bottom: 1rem;
+  }
+  .roadmap-phase .phase-head {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;
+  }
+  .roadmap-phase h4 { font-size: 1rem; }
+  .roadmap-phase .phase-meta { font-size: 0.85rem; color: var(--gray-500); }
+
+  /* Login page */
+  .login-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: var(--gray-50);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .login-overlay.hidden { display: none; }
+  .login-card {
+    background: #fff; border-radius: var(--radius); box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+    padding: 2.5rem; width: 100%; max-width: 400px;
+  }
+  .login-card h2 { text-align: center; margin-bottom: 0.25rem; font-size: 1.4rem; }
+  .login-card .subtitle { text-align: center; color: var(--gray-500); font-size: 0.9rem; margin-bottom: 1.5rem; }
+  .login-card .form-group { margin-bottom: 1rem; }
+  .login-card .form-group input { width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--gray-300); border-radius: 6px; font-size: 0.95rem; }
+  .login-card .btn { width: 100%; margin-top: 0.5rem; }
+  .login-error { color: var(--red); font-size: 0.85rem; text-align: center; margin-top: 0.75rem; display: none; }
+  .login-error.show { display: block; }
+
+  /* User bar */
+  .user-bar {
+    display: flex; align-items: center; gap: 0.75rem;
+    float: right; margin-top: -0.25rem;
+  }
+  .user-bar .username { font-size: 0.85rem; opacity: 0.9; }
+  .user-bar .btn-logout {
+    background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3);
+    padding: 0.3rem 0.75rem; border-radius: 6px; font-size: 0.8rem; cursor: pointer;
+  }
+  .user-bar .btn-logout:hover { background: rgba(255,255,255,0.25); }
+
+  @media (max-width: 640px) {
+    .container { padding: 0.75rem; }
+    .chart-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Login Overlay -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-card">
+    <h2>FinXCloud</h2>
+    <p class="subtitle">Sign in to access the dashboard</p>
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="loginUser">Username</label>
+        <input type="text" id="loginUser" required autocomplete="username" placeholder="Username">
+      </div>
+      <div class="form-group">
+        <label for="loginPass">Password</label>
+        <input type="password" id="loginPass" required autocomplete="current-password" placeholder="Password">
+      </div>
+      <button type="submit" class="btn btn-primary" id="loginBtn">Sign In</button>
+    </form>
+    <div class="login-error" id="loginError">Invalid username or password</div>
+  </div>
+</div>
+
+<div class="header">
+  <h1>FinXCloud Dashboard
+    <span class="user-bar" id="userBar" style="display:none;">
+      <span class="username" id="userDisplay"></span>
+      <button class="btn-logout" id="logoutBtn">Logout</button>
+    </span>
+  </h1>
+  <p>AWS Cost Optimization Tool</p>
+</div>
+
+<div class="container">
+
+  <!-- Scan Form -->
+  <div class="scan-panel">
+    <h2>Run a New Scan</h2>
+    <form id="scanForm">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="accessKey">AWS Access Key ID *</label>
+          <input type="text" id="accessKey" required placeholder="AKIA...">
+        </div>
+        <div class="form-group">
+          <label for="secretKey">AWS Secret Access Key *</label>
+          <input type="password" id="secretKey" required placeholder="Secret key">
+        </div>
+        <div class="form-group">
+          <label for="sessionToken">Session Token (optional)</label>
+          <input type="text" id="sessionToken" placeholder="Optional">
+        </div>
+        <div class="form-group">
+          <label for="region">Default Region</label>
+          <select id="region">
+            <option value="us-east-1" selected>us-east-1</option>
+            <option value="us-east-2">us-east-2</option>
+            <option value="us-west-1">us-west-1</option>
+            <option value="us-west-2">us-west-2</option>
+            <option value="eu-west-1">eu-west-1</option>
+            <option value="eu-central-1">eu-central-1</option>
+            <option value="ap-south-1">ap-south-1</option>
+            <option value="ap-southeast-1">ap-southeast-1</option>
+            <option value="ap-northeast-1">ap-northeast-1</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="regions">Regions to Scan (comma-separated, blank=all)</label>
+          <input type="text" id="regions" placeholder="e.g. us-east-1,eu-west-1">
+        </div>
+        <div class="form-group">
+          <label for="days">Lookback Period (days)</label>
+          <input type="number" id="days" value="30" min="1" max="365">
+        </div>
+      </div>
+      <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;">
+        <div class="checkbox-group">
+          <input type="checkbox" id="orgScan">
+          <label for="orgScan">Scan all Organization accounts</label>
+        </div>
+        <div class="checkbox-group">
+          <input type="checkbox" id="skipUtil">
+          <label for="skipUtil">Skip utilization checks (faster)</label>
+        </div>
+        <button type="submit" class="btn btn-primary" id="scanBtn">Start Scan</button>
+      </div>
+    </form>
+    <div class="progress-bar" id="progressBar">
+      <div class="spinner"></div>
+      <span id="progressText">Initializing...</span>
+    </div>
+    <div class="error-msg" id="errorMsg"></div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard">
+
+    <!-- Metric Cards -->
+    <div class="metrics">
+      <div class="card">
+        <div class="label">Total Resources</div>
+        <div class="value" id="metricResources">0</div>
+      </div>
+      <div class="card">
+        <div class="label">30-Day Cost</div>
+        <div class="value cost" id="metricCost">$0.00</div>
+      </div>
+      <div class="card">
+        <div class="label">Potential Savings</div>
+        <div class="value savings" id="metricSavings">$0.00</div>
+      </div>
+      <div class="card">
+        <div class="label">Savings Potential</div>
+        <div class="value savings" id="metricSavingsPct">0%</div>
+      </div>
+      <div class="card">
+        <div class="label">Quick Wins</div>
+        <div class="value" id="metricQuickWins">0</div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="chart-grid">
+      <div class="chart-panel">
+        <h3>Cost by Service</h3>
+        <canvas id="chartService"></canvas>
+      </div>
+      <div class="chart-panel">
+        <h3>Cost by Region</h3>
+        <canvas id="chartRegion"></canvas>
+      </div>
+      <div class="chart-panel">
+        <h3>Daily Cost Trend</h3>
+        <canvas id="chartTrend"></canvas>
+      </div>
+      <div class="chart-panel">
+        <h3>Savings by Category</h3>
+        <canvas id="chartSavings"></canvas>
+      </div>
+    </div>
+
+    <!-- Recommendations -->
+    <div class="table-panel">
+      <h3>Top Recommendations</h3>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Category</th><th>Recommendation</th><th>Effort</th><th>Est. Savings/mo</th></tr>
+        </thead>
+        <tbody id="recsBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Resource Inventory -->
+    <div class="table-panel">
+      <h3>Resource Inventory</h3>
+      <table>
+        <thead>
+          <tr><th>Resource Type</th><th>Count</th></tr>
+        </thead>
+        <tbody id="resourcesBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Roadmap -->
+    <div id="roadmapSection">
+      <h3 style="margin-bottom:0.75rem;color:var(--gray-700);">Implementation Roadmap</h3>
+      <div id="roadmapCards"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// --- Auth ---
+let isAuthenticated = false;
+
+async function checkAuth() {
+  try {
+    const res = await fetch('/api/me');
+    if (res.ok) {
+      const data = await res.json();
+      showApp(data.username);
+      return;
+    }
+  } catch {}
+  showLogin();
+}
+
+function showLogin() {
+  isAuthenticated = false;
+  document.getElementById('loginOverlay').classList.remove('hidden');
+  document.getElementById('userBar').style.display = 'none';
+}
+
+function showApp(username) {
+  isAuthenticated = true;
+  document.getElementById('loginOverlay').classList.add('hidden');
+  document.getElementById('userBar').style.display = 'flex';
+  document.getElementById('userDisplay').textContent = username;
+}
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById('loginError');
+  errorEl.classList.remove('show');
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        username: document.getElementById('loginUser').value,
+        password: document.getElementById('loginPass').value,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      showApp(data.username);
+    } else {
+      errorEl.classList.add('show');
+    }
+  } catch {
+    errorEl.textContent = 'Connection error';
+    errorEl.classList.add('show');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  showLogin();
+});
+
+// Check auth on load (skip if static/embedded mode)
+if (typeof FINXCLOUD_EMBEDDED_DATA === 'undefined') {
+  checkAuth();
+}
+
+const COLORS = [
+  '#2563eb','#16a34a','#ea580c','#9333ea','#dc2626',
+  '#0891b2','#ca8a04','#4f46e5','#db2777','#059669'
+];
+
+let chartInstances = {};
+
+document.getElementById('scanForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('scanBtn');
+  const progress = document.getElementById('progressBar');
+  const errorEl = document.getElementById('errorMsg');
+
+  btn.disabled = true;
+  progress.classList.add('show');
+  errorEl.classList.remove('show');
+  document.getElementById('dashboard').classList.remove('show');
+
+  const body = {
+    access_key: document.getElementById('accessKey').value,
+    secret_key: document.getElementById('secretKey').value,
+    session_token: document.getElementById('sessionToken').value || null,
+    region: document.getElementById('region').value,
+    regions: document.getElementById('regions').value || null,
+    days: parseInt(document.getElementById('days').value) || 30,
+    org_scan: document.getElementById('orgScan').checked,
+    skip_utilization: document.getElementById('skipUtil').checked,
+  };
+
+  try {
+    const startRes = await fetch('/api/scan', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const startData = await startRes.json();
+    const scanId = startData.scan_id;
+
+    // Poll for status
+    while (true) {
+      await new Promise(r => setTimeout(r, 2000));
+      const statusRes = await fetch(`/api/scan/${scanId}`);
+      const statusData = await statusRes.json();
+      document.getElementById('progressText').textContent = statusData.progress || 'Working...';
+
+      if (statusData.status === 'done') {
+        const resultsRes = await fetch(`/api/scan/${scanId}/results`);
+        const results = await resultsRes.json();
+        renderDashboard(results);
+        progress.classList.remove('show');
+        break;
+      }
+      if (statusData.status === 'failed') {
+        throw new Error(statusData.error || 'Scan failed');
+      }
+    }
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.add('show');
+    progress.classList.remove('show');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function renderDashboard(data) {
+  const { summary, detailed, roadmap, recommendations } = data;
+  const ov = summary.overview;
+
+  // Metrics
+  document.getElementById('metricResources').textContent = ov.total_resources.toLocaleString();
+  document.getElementById('metricCost').textContent = '$' + ov.total_cost_30d.toFixed(2);
+  document.getElementById('metricSavings').textContent = '$' + ov.total_potential_savings.toFixed(2);
+  document.getElementById('metricSavingsPct').textContent = ov.savings_percentage + '%';
+  document.getElementById('metricQuickWins').textContent = summary.quick_wins_count;
+
+  // Charts
+  renderServiceChart(detailed.cost_breakdown.by_service);
+  renderRegionChart(detailed.cost_breakdown.by_region);
+  renderTrendChart(detailed.cost_breakdown.daily_trend);
+  renderSavingsChart(summary.savings_by_category);
+
+  // Recommendations table
+  const recsBody = document.getElementById('recsBody');
+  recsBody.innerHTML = '';
+  (summary.top_recommendations || []).forEach((rec, i) => {
+    const effortClass = rec.effort_level === 'low' ? 'badge-low' :
+                        rec.effort_level === 'medium' ? 'badge-medium' : 'badge-high';
+    recsBody.innerHTML += `<tr>
+      <td>${i+1}</td>
+      <td>${rec.category || ''}</td>
+      <td>${rec.title || ''}</td>
+      <td><span class="badge ${effortClass}">${rec.effort_level || ''}</span></td>
+      <td class="amount-savings">$${(rec.estimated_monthly_savings || 0).toFixed(2)}</td>
+    </tr>`;
+  });
+
+  // Resource inventory
+  const resBody = document.getElementById('resourcesBody');
+  resBody.innerHTML = '';
+  const counts = detailed.resource_counts || {};
+  Object.entries(counts).sort((a,b) => b[1]-a[1]).forEach(([type, count]) => {
+    resBody.innerHTML += `<tr><td>${type}</td><td>${count}</td></tr>`;
+  });
+
+  // Roadmap
+  const roadmapCards = document.getElementById('roadmapCards');
+  roadmapCards.innerHTML = '';
+  (roadmap.phases || []).forEach(phase => {
+    roadmapCards.innerHTML += `<div class="roadmap-phase">
+      <div class="phase-head">
+        <h4>Phase ${phase.phase}: ${phase.name}</h4>
+        <span class="badge badge-low">$${phase.total_estimated_monthly_savings.toFixed(2)} savings/mo</span>
+      </div>
+      <p class="phase-meta">${phase.item_count} item${phase.item_count!==1?'s':''} &middot; Timeline: ${phase.timeline} &middot; Effort: ${phase.effort_level}</p>
+    </div>`;
+  });
+
+  document.getElementById('dashboard').classList.add('show');
+}
+
+function destroyChart(key) {
+  if (chartInstances[key]) { chartInstances[key].destroy(); }
+}
+
+function renderServiceChart(byService) {
+  destroyChart('service');
+  const top = byService.slice(0, 8);
+  chartInstances['service'] = new Chart(document.getElementById('chartService'), {
+    type: 'doughnut',
+    data: {
+      labels: top.map(s => s.service),
+      datasets: [{ data: top.map(s => s.amount), backgroundColor: COLORS }],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => `$${ctx.parsed.toFixed(2)}` } },
+      },
+    },
+  });
+}
+
+function renderRegionChart(byRegion) {
+  destroyChart('region');
+  const top = byRegion.slice(0, 8);
+  chartInstances['region'] = new Chart(document.getElementById('chartRegion'), {
+    type: 'bar',
+    data: {
+      labels: top.map(r => r.region || r.service || 'N/A'),
+      datasets: [{
+        label: 'Cost (USD)', data: top.map(r => r.amount),
+        backgroundColor: '#2563eb88', borderColor: '#2563eb', borderWidth: 1,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => '$' + v.toFixed(0) } },
+        x: { ticks: { font: { size: 10 } } },
+      },
+    },
+  });
+}
+
+function renderTrendChart(dailyTrend) {
+  destroyChart('trend');
+  chartInstances['trend'] = new Chart(document.getElementById('chartTrend'), {
+    type: 'line',
+    data: {
+      labels: dailyTrend.map(d => d.date),
+      datasets: [{
+        label: 'Daily Cost (USD)', data: dailyTrend.map(d => d.amount),
+        borderColor: '#2563eb', backgroundColor: '#2563eb22',
+        fill: true, tension: 0.3, pointRadius: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => '$' + v.toFixed(0) } },
+        x: { ticks: { maxTicksLimit: 10, font: { size: 10 } } },
+      },
+    },
+  });
+}
+
+function renderSavingsChart(savingsByCat) {
+  destroyChart('savings');
+  chartInstances['savings'] = new Chart(document.getElementById('chartSavings'), {
+    type: 'bar',
+    data: {
+      labels: savingsByCat.map(c => c.category),
+      datasets: [{
+        label: 'Est. Savings/mo', data: savingsByCat.map(c => c.estimated_monthly_savings),
+        backgroundColor: '#16a34a88', borderColor: '#16a34a', borderWidth: 1,
+      }],
+    },
+    options: {
+      indexAxis: 'y', responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { callback: v => '$' + v.toFixed(0) } } },
+    },
+  });
+}
+</script>
+
+
+<script>
+// Embedded report data for static/S3 deployment
+var FINXCLOUD_EMBEDDED_DATA = {"summary": {"generated_at": "2026-04-06T13:42:36.949519+00:00", "overview": {"total_resources": 21, "total_cost_30d": 96.17, "total_potential_savings": 12.0, "savings_percentage": 12.5}, "top_cost_services": [{"service": "Amazon OpenSearch Service", "amount": 79.8106, "unit": "USD", "currency": "USD"}, {"service": "EC2 - Other", "amount": 5.8894, "unit": "USD", "currency": "USD"}, {"service": "Tax", "amount": 5.3, "unit": "USD", "currency": "USD"}, {"service": "Amazon Simple Storage Service", "amount": 2.1176, "unit": "USD", "currency": "USD"}, {"service": "AWS Config", "amount": 1.853, "unit": "USD", "currency": "USD"}], "top_recommendations": [{"id": "a2d64ac7-4b34-42ae-b17e-90f228d63af2", "category": "EC2", "title": "Stopped EC2 instance still incurring EBS costs", "description": "Instance i-09602cf43dde9a4f8 is stopped but its attached EBS volumes continue to accrue charges. Consider creating an AMI and terminating the instance, or deleting unused volumes.", "resource_id": "i-09602cf43dde9a4f8", "resource_type": "ec2_instance", "region": "ap-south-1", "estimated_monthly_savings": 3.0, "effort_level": "low", "priority": 3, "well_architected_pillar": "Cost Optimization", "action": "Terminate instance or snapshot and delete volumes"}, {"id": "7df9cf41-4db8-415f-888a-f5f3dd7095fc", "category": "EC2", "title": "Stopped EC2 instance still incurring EBS costs", "description": "Instance i-07f0136013d1f13d9 is stopped but its attached EBS volumes continue to accrue charges. Consider creating an AMI and terminating the instance, or deleting unused volumes.", "resource_id": "i-07f0136013d1f13d9", "resource_type": "ec2_instance", "region": "us-east-1", "estimated_monthly_savings": 3.0, "effort_level": "low", "priority": 3, "well_architected_pillar": "Cost Optimization", "action": "Terminate instance or snapshot and delete volumes"}, {"id": "77a5fc00-870e-4b88-af0a-769bbf54d069", "category": "EC2", "title": "Stopped EC2 instance still incurring EBS costs", "description": "Instance i-03cecc28a75451204 is stopped but its attached EBS volumes continue to accrue charges. Consider creating an AMI and terminating the instance, or deleting unused volumes.", "resource_id": "i-03cecc28a75451204", "resource_type": "ec2_instance", "region": "us-east-1", "estimated_monthly_savings": 3.0, "effort_level": "low", "priority": 3, "well_architected_pillar": "Cost Optimization", "action": "Terminate instance or snapshot and delete volumes"}, {"id": "937827ac-2213-43c5-80dd-3b91acddb3f8", "category": "EC2", "title": "Stopped EC2 instance still incurring EBS costs", "description": "Instance i-04210a846ebaabdb2 is stopped but its attached EBS volumes continue to accrue charges. Consider creating an AMI and terminating the instance, or deleting unused volumes.", "resource_id": "i-04210a846ebaabdb2", "resource_type": "ec2_instance", "region": "us-east-1", "estimated_monthly_savings": 3.0, "effort_level": "low", "priority": 3, "well_architected_pillar": "Cost Optimization", "action": "Terminate instance or snapshot and delete volumes"}, {"id": "eb7b6c96-1a1e-475d-813a-cbf25a3fb9f0", "category": "S3", "title": "S3 bucket has no lifecycle policy", "description": "Bucket mydata1503 has no lifecycle rules. Adding lifecycle policies to transition objects to cheaper storage classes or expire old objects can significantly reduce costs.", "resource_id": "mydata1503", "resource_type": "s3_bucket", "region": "ap-south-1", "estimated_monthly_savings": 0.0, "effort_level": "medium", "priority": 4, "well_architected_pillar": "Cost Optimization", "action": "Add lifecycle rules to transition/expire objects"}, {"id": "d4df9e91-596a-4505-8978-0358a4026a26", "category": "S3", "title": "S3 bucket has no lifecycle policy", "description": "Bucket off-bucket-mar-2025 has no lifecycle rules. Adding lifecycle policies to transition objects to cheaper storage classes or expire old objects can significantly reduce costs.", "resource_id": "off-bucket-mar-2025", "resource_type": "s3_bucket", "region": "us-east-1", "estimated_monthly_savings": 0.0, "effort_level": "medium", "priority": 4, "well_architected_pillar": "Cost Optimization", "action": "Add lifecycle rules to transition/expire objects"}], "savings_by_category": [{"category": "EC2", "estimated_monthly_savings": 12.0}, {"category": "S3", "estimated_monthly_savings": 0.0}], "quick_wins_count": 4}, "detailed": {"generated_at": "2026-04-06T13:42:36.949399+00:00", "resource_inventory": {"ami": {"count": 1, "details": [{"resource_type": "ami", "region": "us-east-1", "image_id": "ami-0f3b5741da89c1a1f", "name": "jenkins01", "creation_date": "2026-01-27T11:29:21.000Z", "account_id": "902659245843"}]}, "ebs_snapshot": {"count": 1, "details": [{"resource_type": "ebs_snapshot", "region": "us-east-1", "snapshot_id": "snap-016cad806b8b2ed3b", "volume_size": 8, "start_time": "2026-01-27 11:29:21.716000+00:00", "description": "Created by CreateImage(i-03cecc28a75451204) for ami-0f3b5741da89c1a1f", "account_id": "902659245843"}]}, "ebs_volume": {"count": 4, "details": [{"resource_type": "ebs_volume", "region": "ap-south-1", "volume_id": "vol-05dc6532102b0f174", "size": 20, "type": "gp3", "state": "in-use", "attachments": [{"instance_id": "i-09602cf43dde9a4f8", "device": "/dev/xvda", "state": "attached"}], "iops": 3000, "encrypted": false, "account_id": "902659245843"}, {"resource_type": "ebs_volume", "region": "us-east-1", "volume_id": "vol-0f4747c44b86c27a3", "size": 15, "type": "gp3", "state": "in-use", "attachments": [{"instance_id": "i-07f0136013d1f13d9", "device": "/dev/sda1", "state": "attached"}], "iops": 3000, "encrypted": false, "account_id": "902659245843"}, {"resource_type": "ebs_volume", "region": "us-east-1", "volume_id": "vol-07ba36bb8a7a58685", "size": 8, "type": "gp3", "state": "in-use", "attachments": [{"instance_id": "i-03cecc28a75451204", "device": "/dev/sda1", "state": "attached"}], "iops": 3000, "encrypted": false, "account_id": "902659245843"}, {"resource_type": "ebs_volume", "region": "us-east-1", "volume_id": "vol-03c7a892e2c57f101", "size": 20, "type": "gp3", "state": "in-use", "attachments": [{"instance_id": "i-04210a846ebaabdb2", "device": "/dev/sda1", "state": "attached"}], "iops": 3000, "encrypted": false, "account_id": "902659245843"}]}, "ec2_instance": {"count": 4, "details": [{"resource_type": "ec2_instance", "region": "ap-south-1", "instance_id": "i-09602cf43dde9a4f8", "type": "t3.large", "state": "stopped", "launch_time": "2026-04-05 02:55:43+00:00", "tags": {"Name": "rohini-clothing"}, "platform": "linux", "vpc_id": "vpc-0e66ffb037b4f70f6", "account_id": "902659245843"}, {"resource_type": "ec2_instance", "region": "us-east-1", "instance_id": "i-07f0136013d1f13d9", "type": "t3a.large", "state": "stopped", "launch_time": "2025-02-13 11:16:03+00:00", "tags": {"Name": "my-linux"}, "platform": "linux", "vpc_id": "vpc-0ff81d6f4caaf8b6d", "account_id": "902659245843"}, {"resource_type": "ec2_instance", "region": "us-east-1", "instance_id": "i-03cecc28a75451204", "type": "t3a.medium", "state": "stopped", "launch_time": "2025-05-14 07:38:26+00:00", "tags": {"Name": "jenkins01"}, "platform": "linux", "vpc_id": "vpc-0ff81d6f4caaf8b6d", "account_id": "902659245843"}, {"resource_type": "ec2_instance", "region": "us-east-1", "instance_id": "i-04210a846ebaabdb2", "type": "t3.medium", "state": "stopped", "launch_time": "2026-03-25 14:48:57+00:00", "tags": {"Name": "n8n-server"}, "platform": "linux", "vpc_id": "vpc-0ff81d6f4caaf8b6d", "account_id": "902659245843"}]}, "lambda_function": {"count": 5, "details": [{"resource_type": "lambda_function", "region": "us-east-1", "name": "DigiScienceSalesAgent", "runtime": "python3.12", "memory_size": 512, "timeout": 300, "code_size": 2105, "last_modified": "2026-03-24T16:36:05.000+0000", "handler": "sales_agent.lambda_handler", "account_id": "902659245843"}, {"resource_type": "lambda_function", "region": "us-east-1", "name": "snapshots-older-60", "runtime": "python3.14", "memory_size": 128, "timeout": 300, "code_size": 1857, "last_modified": "2025-11-27T13:25:06.000+0000", "handler": "lambda_function.lambda_handler", "account_id": "902659245843"}, {"resource_type": "lambda_function", "region": "us-east-1", "name": "bedrock-web-search", "runtime": "python3.12", "memory_size": 128, "timeout": 3, "code_size": 688, "last_modified": "2026-03-22T13:15:05.000+0000", "handler": "lambda_function.lambda_handler", "account_id": "902659245843"}, {"resource_type": "lambda_function", "region": "us-east-1", "name": "unused_ebs_discovery", "runtime": "python3.14", "memory_size": 128, "timeout": 300, "code_size": 3288, "last_modified": "2025-11-27T15:00:56.000+0000", "handler": "lambda_function.lambda_handler", "account_id": "902659245843"}, {"resource_type": "lambda_function", "region": "us-east-1", "name": "bedrock-search-v3", "runtime": "python3.12", "memory_size": 128, "timeout": 30, "code_size": 768, "last_modified": "2026-03-23T10:05:38.000+0000", "handler": "lf.lambda_handler", "account_id": "902659245843"}]}, "s3_bucket": {"count": 6, "details": [{"resource_type": "s3_bucket", "name": "my-off-work", "creation_date": "2024-03-20 07:27:02+00:00", "region": "us-east-1", "versioning": "Enabled", "lifecycle_rules_count": 1, "encryption": "AES256", "account_id": "902659245843"}, {"resource_type": "s3_bucket", "name": "mydata1503", "creation_date": "2024-03-11 11:30:49+00:00", "region": "ap-south-1", "versioning": "Enabled", "lifecycle_rules_count": 0, "encryption": "AES256", "account_id": "902659245843"}, {"resource_type": "s3_bucket", "name": "off-bucket-mar-2025", "creation_date": "2025-03-18 08:13:40+00:00", "region": "us-east-1", "versioning": "Disabled", "lifecycle_rules_count": 0, "encryption": "AES256", "account_id": "902659245843"}, {"resource_type": "s3_bucket", "name": "rajiv-org-cloudtrail-logs-902659245843", "creation_date": "2026-04-05 05:49:34+00:00", "region": "ap-south-1", "versioning": "Enabled", "lifecycle_rules_count": 1, "encryption": "aws:kms", "account_id": "902659245843"}, {"resource_type": "s3_bucket", "name": "rajiv-org-config-logs-902659245843", "creation_date": "2026-04-05 05:49:34+00:00", "region": "ap-south-1", "versioning": "Enabled", "lifecycle_rules_count": 1, "encryption": "aws:kms", "account_id": "902659245843"}, {"resource_type": "s3_bucket", "name": "rajiv-org-s3-access-logs-902659245843", "creation_date": "2026-04-05 05:49:34+00:00", "region": "ap-south-1", "versioning": "Disabled", "lifecycle_rules_count": 1, "encryption": "AES256", "account_id": "902659245843"}]}}, "cost_breakdown": {"by_service": [{"service": "Amazon OpenSearch Service", "amount": 79.8106, "unit": "USD", "currency": "USD"}, {"service": "EC2 - Other", "amount": 5.8894, "unit": "USD", "currency": "USD"}, {"service": "Tax", "amount": 5.3, "unit": "USD", "currency": "USD"}, {"service": "Amazon Simple Storage Service", "amount": 2.1176, "unit": "USD", "currency": "USD"}, {"service": "AWS Config", "amount": 1.853, "unit": "USD", "currency": "USD"}, {"service": "Amazon Elastic Compute Cloud - Compute", "amount": 0.6283, "unit": "USD", "currency": "USD"}, {"service": "AWS Secrets Manager", "amount": 0.1913, "unit": "USD", "currency": "USD"}, {"service": "Amazon Bedrock", "amount": 0.1053, "unit": "USD", "currency": "USD"}, {"service": "Amazon Virtual Private Cloud", "amount": 0.0892, "unit": "USD", "currency": "USD"}, {"service": "AWS Cost Explorer", "amount": 0.05, "unit": "USD", "currency": "USD"}, {"service": "Amazon Elastic Load Balancing", "amount": 0.0478, "unit": "USD", "currency": "USD"}, {"service": "Amazon ElastiCache", "amount": 0.042, "unit": "USD", "currency": "USD"}, {"service": "Amazon Elastic Container Service", "amount": 0.0245, "unit": "USD", "currency": "USD"}, {"service": "Amazon Relational Database Service", "amount": 0.0191, "unit": "USD", "currency": "USD"}, {"service": "AWS CloudShell", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "AWS Glue", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "AWS Key Management Service", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "AWS Lambda", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "Amazon Simple Email Service", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "Amazon Simple Notification Service", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "Amazon Simple Queue Service", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "AmazonCloudWatch", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "AWS CloudTrail", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "AWS Security Hub", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "Amazon EC2 Container Registry (ECR)", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "Amazon GuardDuty", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "CodeBuild", "amount": 0.0, "unit": "USD", "currency": "USD"}], "by_region": [{"service": "us-east-1", "amount": 87.2441, "unit": "USD", "currency": "USD"}, {"service": "NoRegion", "amount": 5.3, "unit": "USD", "currency": "USD"}, {"service": "ap-south-1", "amount": 3.6241, "unit": "USD", "currency": "USD"}, {"service": "eu-north-1", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "global", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "ap-southeast-1", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "eu-west-1", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "us-west-2", "amount": 0.0, "unit": "USD", "currency": "USD"}], "by_account": [{"service": "902659245843", "amount": 95.763, "unit": "USD", "currency": "USD"}, {"service": "633867805811", "amount": 0.4051, "unit": "USD", "currency": "USD"}, {"service": "075295381993", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "379113716271", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "623756711510", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "896680104135", "amount": 0.0, "unit": "USD", "currency": "USD"}, {"service": "955223363782", "amount": 0.0, "unit": "USD", "currency": "USD"}], "daily_trend": [{"date": "2026-03-07", "amount": 0.2387}, {"date": "2026-03-08", "amount": 0.2387}, {"date": "2026-03-09", "amount": 0.2387}, {"date": "2026-03-10", "amount": 0.2387}, {"date": "2026-03-11", "amount": 0.2387}, {"date": "2026-03-12", "amount": 0.2387}, {"date": "2026-03-13", "amount": 0.2387}, {"date": "2026-03-14", "amount": 0.2387}, {"date": "2026-03-15", "amount": 0.2388}, {"date": "2026-03-16", "amount": 0.2387}, {"date": "2026-03-17", "amount": 0.2387}, {"date": "2026-03-18", "amount": 0.2387}, {"date": "2026-03-19", "amount": 0.2387}, {"date": "2026-03-20", "amount": 0.2387}, {"date": "2026-03-21", "amount": 0.2387}, {"date": "2026-03-22", "amount": 2.6943}, {"date": "2026-03-23", "amount": 6.0377}, {"date": "2026-03-24", "amount": 6.0768}, {"date": "2026-03-25", "amount": 6.4611}, {"date": "2026-03-26", "amount": 6.1383}, {"date": "2026-03-27", "amount": 6.0633}, {"date": "2026-03-28", "amount": 6.0632}, {"date": "2026-03-29", "amount": 6.0633}, {"date": "2026-03-30", "amount": 6.0633}, {"date": "2026-03-31", "amount": 6.0632}, {"date": "2026-04-01", "amount": 11.3334}, {"date": "2026-04-02", "amount": 6.0734}, {"date": "2026-04-03", "amount": 6.0733}, {"date": "2026-04-04", "amount": 6.0751}, {"date": "2026-04-05", "amount": 5.3076}], "total_cost_30d": 96.17}, "resource_counts": {"ami": 1, "ebs_snapshot": 1, "ebs_volume": 4, "ec2_instance": 4, "lambda_function": 5, "s3_bucket": 6}}, "roadmap": {"generated_at": "2026-04-06T13:42:36.949604+00:00", "phases": [{"phase": 1, "name": "Quick Wins", "effort_level": "low", "timeline": "< 1 day per item", "items": [{"id": "a2d64ac7-4b34-42ae-b17e-90f228d63af2", "category": "EC2", "title": "Stopped EC2 instance still incurring EBS costs", "description": "Instance i-09602cf43dde9a4f8 is stopped but its attached EBS volumes continue to accrue charges. Consider creating an AMI and terminating the instance, or deleting unused volumes.", "resource_id": "i-09602cf43dde9a4f8", "resource_type": "ec2_instance", "region": "ap-south-1", "estimated_monthly_savings": 3.0, "effort_level": "low", "priority": 3, "well_architected_pillar": "Cost Optimization", "action": "Terminate instance or snapshot and delete volumes"}, {"id": "7df9cf41-4db8-415f-888a-f5f3dd7095fc", "category": "EC2", "title": "Stopped EC2 instance still incurring EBS costs", "description": "Instance i-07f0136013d1f13d9 is stopped but its attached EBS volumes continue to accrue charges. Consider creating an AMI and terminating the instance, or deleting unused volumes.", "resource_id": "i-07f0136013d1f13d9", "resource_type": "ec2_instance", "region": "us-east-1", "estimated_monthly_savings": 3.0, "effort_level": "low", "priority": 3, "well_architected_pillar": "Cost Optimization", "action": "Terminate instance or snapshot and delete volumes"}, {"id": "77a5fc00-870e-4b88-af0a-769bbf54d069", "category": "EC2", "title": "Stopped EC2 instance still incurring EBS costs", "description": "Instance i-03cecc28a75451204 is stopped but its attached EBS volumes continue to accrue charges. Consider creating an AMI and terminating the instance, or deleting unused volumes.", "resource_id": "i-03cecc28a75451204", "resource_type": "ec2_instance", "region": "us-east-1", "estimated_monthly_savings": 3.0, "effort_level": "low", "priority": 3, "well_architected_pillar": "Cost Optimization", "action": "Terminate instance or snapshot and delete volumes"}, {"id": "937827ac-2213-43c5-80dd-3b91acddb3f8", "category": "EC2", "title": "Stopped EC2 instance still incurring EBS costs", "description": "Instance i-04210a846ebaabdb2 is stopped but its attached EBS volumes continue to accrue charges. Consider creating an AMI and terminating the instance, or deleting unused volumes.", "resource_id": "i-04210a846ebaabdb2", "resource_type": "ec2_instance", "region": "us-east-1", "estimated_monthly_savings": 3.0, "effort_level": "low", "priority": 3, "well_architected_pillar": "Cost Optimization", "action": "Terminate instance or snapshot and delete volumes"}], "item_count": 4, "total_estimated_monthly_savings": 12.0}, {"phase": 2, "name": "Medium Term", "effort_level": "medium", "timeline": "1-2 weeks", "items": [{"id": "eb7b6c96-1a1e-475d-813a-cbf25a3fb9f0", "category": "S3", "title": "S3 bucket has no lifecycle policy", "description": "Bucket mydata1503 has no lifecycle rules. Adding lifecycle policies to transition objects to cheaper storage classes or expire old objects can significantly reduce costs.", "resource_id": "mydata1503", "resource_type": "s3_bucket", "region": "ap-south-1", "estimated_monthly_savings": 0.0, "effort_level": "medium", "priority": 4, "well_architected_pillar": "Cost Optimization", "action": "Add lifecycle rules to transition/expire objects"}, {"id": "d4df9e91-596a-4505-8978-0358a4026a26", "category": "S3", "title": "S3 bucket has no lifecycle policy", "description": "Bucket off-bucket-mar-2025 has no lifecycle rules. Adding lifecycle policies to transition objects to cheaper storage classes or expire old objects can significantly reduce costs.", "resource_id": "off-bucket-mar-2025", "resource_type": "s3_bucket", "region": "us-east-1", "estimated_monthly_savings": 0.0, "effort_level": "medium", "priority": 4, "well_architected_pillar": "Cost Optimization", "action": "Add lifecycle rules to transition/expire objects"}], "item_count": 2, "total_estimated_monthly_savings": 0.0}, {"phase": 3, "name": "Strategic", "effort_level": "high", "timeline": "1+ month", "items": [], "item_count": 0, "total_estimated_monthly_savings": 0}], "total_estimated_monthly_savings": 12.0, "implementation_summary": "Phase 1 (Quick Wins): 4 items saving ~$12.00 | Phase 2 (Medium Term): 2 items saving ~$0.00. Total estimated savings: $12.00/month."}, "recommendations": [{"id": "a2d64ac7-4b34-42ae-b17e-90f228d63af2", "category": "EC2", "title": "Stopped EC2 instance still incurring EBS costs", "description": "Instance i-09602cf43dde9a4f8 is stopped but its attached EBS volumes continue to accrue charges. Consider creating an AMI and terminating the instance, or deleting unused volumes.", "resource_id": "i-09602cf43dde9a4f8", "resource_type": "ec2_instance", "region": "ap-south-1", "estimated_monthly_savings": 3.0, "effort_level": "low", "priority": 3, "well_architected_pillar": "Cost Optimization", "action": "Terminate instance or snapshot and delete volumes"}, {"id": "7df9cf41-4db8-415f-888a-f5f3dd7095fc", "category": "EC2", "title": "Stopped EC2 instance still incurring EBS costs", "description": "Instance i-07f0136013d1f13d9 is stopped but its attached EBS volumes continue to accrue charges. Consider creating an AMI and terminating the instance, or deleting unused volumes.", "resource_id": "i-07f0136013d1f13d9", "resource_type": "ec2_instance", "region": "us-east-1", "estimated_monthly_savings": 3.0, "effort_level": "low", "priority": 3, "well_architected_pillar": "Cost Optimization", "action": "Terminate instance or snapshot and delete volumes"}, {"id": "77a5fc00-870e-4b88-af0a-769bbf54d069", "category": "EC2", "title": "Stopped EC2 instance still incurring EBS costs", "description": "Instance i-03cecc28a75451204 is stopped but its attached EBS volumes continue to accrue charges. Consider creating an AMI and terminating the instance, or deleting unused volumes.", "resource_id": "i-03cecc28a75451204", "resource_type": "ec2_instance", "region": "us-east-1", "estimated_monthly_savings": 3.0, "effort_level": "low", "priority": 3, "well_architected_pillar": "Cost Optimization", "action": "Terminate instance or snapshot and delete volumes"}, {"id": "937827ac-2213-43c5-80dd-3b91acddb3f8", "category": "EC2", "title": "Stopped EC2 instance still incurring EBS costs", "description": "Instance i-04210a846ebaabdb2 is stopped but its attached EBS volumes continue to accrue charges. Consider creating an AMI and terminating the instance, or deleting unused volumes.", "resource_id": "i-04210a846ebaabdb2", "resource_type": "ec2_instance", "region": "us-east-1", "estimated_monthly_savings": 3.0, "effort_level": "low", "priority": 3, "well_architected_pillar": "Cost Optimization", "action": "Terminate instance or snapshot and delete volumes"}, {"id": "eb7b6c96-1a1e-475d-813a-cbf25a3fb9f0", "category": "S3", "title": "S3 bucket has no lifecycle policy", "description": "Bucket mydata1503 has no lifecycle rules. Adding lifecycle policies to transition objects to cheaper storage classes or expire old objects can significantly reduce costs.", "resource_id": "mydata1503", "resource_type": "s3_bucket", "region": "ap-south-1", "estimated_monthly_savings": 0.0, "effort_level": "medium", "priority": 4, "well_architected_pillar": "Cost Optimization", "action": "Add lifecycle rules to transition/expire objects"}, {"id": "d4df9e91-596a-4505-8978-0358a4026a26", "category": "S3", "title": "S3 bucket has no lifecycle policy", "description": "Bucket off-bucket-mar-2025 has no lifecycle rules. Adding lifecycle policies to transition objects to cheaper storage classes or expire old objects can significantly reduce costs.", "resource_id": "off-bucket-mar-2025", "resource_type": "s3_bucket", "region": "us-east-1", "estimated_monthly_savings": 0.0, "effort_level": "medium", "priority": 4, "well_architected_pillar": "Cost Optimization", "action": "Add lifecycle rules to transition/expire objects"}]};
+// Auto-render on load in static mode
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelector('.scan-panel').style.display = 'none';
+  if (typeof FINXCLOUD_STATIC_AUTH !== 'undefined' && FINXCLOUD_STATIC_AUTH) {
+    showStaticLogin();
+  } else {
+    document.getElementById('loginOverlay').classList.add('hidden');
+    renderDashboard(FINXCLOUD_EMBEDDED_DATA);
+  }
+});
+function showStaticLogin() {
+  document.getElementById('loginOverlay').classList.remove('hidden');
+  document.getElementById('loginForm').onsubmit = async function(e) {
+    e.preventDefault();
+    var pass = document.getElementById('loginPass').value;
+    var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pass));
+    var hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+    if (hash === FINXCLOUD_DEPLOY_PASSWORD_HASH) {
+      document.getElementById('loginOverlay').classList.add('hidden');
+      renderDashboard(FINXCLOUD_EMBEDDED_DATA);
+    } else {
+      document.getElementById('loginError').classList.add('show');
+    }
+  };
+}
+</script>
+</body>
+</html>
