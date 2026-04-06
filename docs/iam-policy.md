@@ -126,6 +126,45 @@ This document describes the minimum AWS IAM permissions required to run FinXClou
 }
 ```
 
+## S3 Report Storage Policy (Optional)
+
+If using `--output-s3-bucket` to upload scan reports to S3, add the following policy. Replace `YOUR_BUCKET_NAME` and optionally scope the prefix.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "FinXCloudS3ReportUpload",
+            "Effect": "Allow",
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::YOUR_BUCKET_NAME",
+                "arn:aws:s3:::YOUR_BUCKET_NAME/*"
+            ]
+        }
+    ]
+}
+```
+
+To scope uploads to a specific prefix (e.g. `finxcloud-reports/`), use a condition:
+
+```json
+{
+    "Sid": "FinXCloudS3ReportUploadScoped",
+    "Effect": "Allow",
+    "Action": [
+        "s3:PutObject",
+        "s3:GetObject"
+    ],
+    "Resource": "arn:aws:s3:::YOUR_BUCKET_NAME/finxcloud-reports/*"
+}
+```
+
 ## Notes
 
 - **Cost Explorer** must be enabled in the AWS account (it is not enabled by default). Enable it in the AWS Billing console.
@@ -133,7 +172,8 @@ This document describes the minimum AWS IAM permissions required to run FinXClou
 - **AssumeRole** permission is only needed for Organizations cross-account scanning. The target role (`OrganizationAccountAccessRole`) is created by default in member accounts created through AWS Organizations.
 - **CloudWatch** permissions are optional if using `--skip-utilization` flag.
 - **OpenSearch** permissions use the `es:` action prefix (the AWS service is still registered under the Elasticsearch namespace).
-- All permissions are **read-only** — FinXCloud never modifies any AWS resources.
+- All scan permissions are **read-only** — FinXCloud never modifies any AWS resources.
+- **S3 report storage** permissions are only needed if using `--output-s3-bucket`. These grant write access to the specified bucket only.
 
 ## Custom Role Name
 

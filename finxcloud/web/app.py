@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from finxcloud.auth.credentials import AWSCredentials, create_session, validate_credentials
+from finxcloud.output.s3_writer import S3Writer
 from finxcloud.auth.organizations import is_organizations_account, list_member_accounts, assume_role_session
 from finxcloud.scanner.ec2 import EC2Scanner
 from finxcloud.scanner.rds import RDSScanner
@@ -50,6 +52,8 @@ class ScanRequest(BaseModel):
     days: int = 30
     regions: str | None = None
     skip_utilization: bool = False
+    output_s3_bucket: str | None = None
+    output_s3_prefix: str = ""
 
 
 @app.get("/")
@@ -195,6 +199,13 @@ def _run_scan(scan_id: str, req: ScanRequest) -> None:
         roadmap_reporter = RoadmapReporter(recommendations)
         roadmap_report = roadmap_reporter.generate()
 
+        # Upload to S3 if configured
+        s3_keys: list[str] = []
+        if req.output_s3_bucket:
+            scan["progress"] = "Uploading reports to S3..."
+            s3w = S3Writer(session, req.output_s3_bucket, req.output_s3_prefix)
+            s3_keys = s3w.write_all(detailed_report, summary_report, roadmap_report)
+
         scan["result"] = {
             "summary": summary_report,
             "detailed": detailed_report,
@@ -202,6 +213,7 @@ def _run_scan(scan_id: str, req: ScanRequest) -> None:
             "recommendations": recommendations,
             "resources": all_resources,
             "cost_data": merged_cost_data,
+            "s3_keys": s3_keys,
         }
         scan["status"] = "done"
         scan["progress"] = "Scan complete"
@@ -211,6 +223,43 @@ def _run_scan(scan_id: str, req: ScanRequest) -> None:
         scan["status"] = "failed"
         scan["error"] = str(e)
         scan["progress"] = f"Failed: {e}"
+
+
+class S3ReportRequest(BaseModel):
+    access_key: str
+    secret_key: str
+    session_token: str | None = None
+    region: str = "us-east-1"
+    bucket: str
+    prefix: str = ""
+
+
+@app.post("/api/s3/reports")
+async def list_s3_reports(req: S3ReportRequest):
+    """List available reports in an S3 bucket."""
+    creds = AWSCredentials(
+        access_key_id=req.access_key,
+        secret_access_key=req.secret_key,
+        session_token=req.session_token,
+        region=req.region,
+    )
+    session = create_session(creds)
+    s3w = S3Writer(session, req.bucket, req.prefix)
+    return {"keys": s3w.list_reports()}
+
+
+@app.post("/api/s3/report")
+async def get_s3_report(req: S3ReportRequest, filename: str = Query(...)):
+    """Read a specific JSON report from S3."""
+    creds = AWSCredentials(
+        access_key_id=req.access_key,
+        secret_access_key=req.secret_key,
+        session_token=req.session_token,
+        region=req.region,
+    )
+    session = create_session(creds)
+    s3w = S3Writer(session, req.bucket, req.prefix)
+    return s3w.read_json(filename)
 
 
 def _merge_cost_data(cost_data_by_account: dict) -> dict:
