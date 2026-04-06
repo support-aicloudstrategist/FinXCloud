@@ -401,6 +401,8 @@ function showApp(username) {
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  // Skip API-based login in static/embedded mode
+  if (typeof FINXCLOUD_STATIC_AUTH !== 'undefined' && FINXCLOUD_STATIC_AUTH) return;
   const errorEl = document.getElementById('loginError');
   errorEl.classList.remove('show');
   const btn = document.getElementById('loginBtn');
