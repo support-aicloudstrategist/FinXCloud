@@ -28,6 +28,7 @@ from finxcloud.reporter.summary import SummaryReporter
 from finxcloud.reporter.roadmap import RoadmapReporter
 from finxcloud.output.json_writer import JSONWriter
 from finxcloud.output.html_writer import HTMLWriter
+from finxcloud.output.s3_writer import S3Writer
 
 console = Console()
 log = logging.getLogger("finxcloud")
@@ -56,6 +57,8 @@ def main(verbose: bool) -> None:
 @click.option("--days", default=30, type=int, help="Cost analysis lookback period in days.")
 @click.option("--output-dir", "-o", default="reports", help="Output directory for reports.")
 @click.option("--regions", default=None, help="Comma-separated list of regions to scan (default: all).")
+@click.option("--output-s3-bucket", default=None, help="S3 bucket to upload reports to (in addition to local disk).")
+@click.option("--output-s3-prefix", default="", help="S3 key prefix for uploaded reports.")
 @click.option("--skip-utilization", is_flag=True, help="Skip CloudWatch utilization checks (faster).")
 def scan(
     access_key: str,
@@ -66,6 +69,8 @@ def scan(
     org: bool,
     org_role: str,
     days: int,
+    output_s3_bucket: str | None,
+    output_s3_prefix: str,
     output_dir: str,
     regions: str | None,
     skip_utilization: bool,
@@ -205,6 +210,17 @@ def scan(
         html_writer = HTMLWriter(output_dir)
         html_file = html_writer.write(summary_report, detailed_report, roadmap_report)
 
+    # Upload to S3 if configured
+    s3_keys: list[str] = []
+    if output_s3_bucket:
+        with console.status("[bold green]Uploading reports to S3..."):
+            s3w = S3Writer(session, output_s3_bucket, output_s3_prefix)
+            # Read the rendered HTML from disk to upload
+            with open(html_file, "r", encoding="utf-8") as fh:
+                html_content = fh.read()
+            s3_keys = s3w.write_all(detailed_report, summary_report, roadmap_report, html_content)
+            console.print(f"  ✓ Uploaded [bold]{len(s3_keys)}[/bold] reports to s3://{output_s3_bucket}")
+
     # Print summary
     console.print("\n" + "=" * 60)
     console.print("[bold blue]FinXCloud Scan Complete[/bold blue]")
@@ -216,6 +232,10 @@ def scan(
     for f in json_files:
         console.print(f"  📄 {f}")
     console.print(f"  🌐 {html_file}")
+    if s3_keys:
+        console.print(f"\n[bold]Reports uploaded to S3:[/bold]")
+        for key in s3_keys:
+            console.print(f"  ☁️  s3://{output_s3_bucket}/{key}")
     console.print()
 
 
