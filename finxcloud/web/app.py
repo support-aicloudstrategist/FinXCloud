@@ -8,11 +8,12 @@ import threading
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from finxcloud.web.auth import authenticate, require_auth
 from finxcloud.auth.credentials import AWSCredentials, create_session, validate_credentials
 from finxcloud.output.s3_writer import S3Writer
 from finxcloud.auth.organizations import is_organizations_account, list_member_accounts, assume_role_session
@@ -42,6 +43,11 @@ _scan_lock = threading.Lock()
 _scans: dict[str, dict] = {}
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
 class ScanRequest(BaseModel):
     access_key: str
     secret_key: str
@@ -61,8 +67,36 @@ async def index():
     return FileResponse(str(STATIC_DIR / "index.html"))
 
 
+@app.post("/api/login")
+async def login(req: LoginRequest):
+    token = authenticate(req.username, req.password)
+    if not token:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    response = JSONResponse({"status": "ok", "username": req.username})
+    response.set_cookie(
+        key="finxcloud_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=24 * 3600,
+    )
+    return response
+
+
+@app.post("/api/logout")
+async def logout():
+    response = JSONResponse({"status": "ok"})
+    response.delete_cookie("finxcloud_token")
+    return response
+
+
+@app.get("/api/me")
+async def me(user: dict = Depends(require_auth)):
+    return {"username": user["sub"]}
+
+
 @app.post("/api/scan")
-async def start_scan(req: ScanRequest):
+async def start_scan(req: ScanRequest, _user: dict = Depends(require_auth)):
     scan_id = str(uuid.uuid4())[:8]
     _scans[scan_id] = {"status": "running", "progress": "Initializing...", "result": None, "error": None}
     thread = threading.Thread(target=_run_scan, args=(scan_id, req), daemon=True)
@@ -71,7 +105,7 @@ async def start_scan(req: ScanRequest):
 
 
 @app.get("/api/scan/{scan_id}")
-async def get_scan_status(scan_id: str):
+async def get_scan_status(scan_id: str, _user: dict = Depends(require_auth)):
     scan = _scans.get(scan_id)
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -84,7 +118,7 @@ async def get_scan_status(scan_id: str):
 
 
 @app.get("/api/scan/{scan_id}/results")
-async def get_scan_results(scan_id: str):
+async def get_scan_results(scan_id: str, _user: dict = Depends(require_auth)):
     scan = _scans.get(scan_id)
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -235,7 +269,7 @@ class S3ReportRequest(BaseModel):
 
 
 @app.post("/api/s3/reports")
-async def list_s3_reports(req: S3ReportRequest):
+async def list_s3_reports(req: S3ReportRequest, _user: dict = Depends(require_auth)):
     """List available reports in an S3 bucket."""
     creds = AWSCredentials(
         access_key_id=req.access_key,
@@ -249,7 +283,7 @@ async def list_s3_reports(req: S3ReportRequest):
 
 
 @app.post("/api/s3/report")
-async def get_s3_report(req: S3ReportRequest, filename: str = Query(...)):
+async def get_s3_report(req: S3ReportRequest, filename: str = Query(...), _user: dict = Depends(require_auth)):
     """Read a specific JSON report from S3."""
     creds = AWSCredentials(
         access_key_id=req.access_key,

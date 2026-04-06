@@ -162,6 +162,37 @@
   .roadmap-phase h4 { font-size: 1rem; }
   .roadmap-phase .phase-meta { font-size: 0.85rem; color: var(--gray-500); }
 
+  /* Login page */
+  .login-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: var(--gray-50);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .login-overlay.hidden { display: none; }
+  .login-card {
+    background: #fff; border-radius: var(--radius); box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+    padding: 2.5rem; width: 100%; max-width: 400px;
+  }
+  .login-card h2 { text-align: center; margin-bottom: 0.25rem; font-size: 1.4rem; }
+  .login-card .subtitle { text-align: center; color: var(--gray-500); font-size: 0.9rem; margin-bottom: 1.5rem; }
+  .login-card .form-group { margin-bottom: 1rem; }
+  .login-card .form-group input { width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--gray-300); border-radius: 6px; font-size: 0.95rem; }
+  .login-card .btn { width: 100%; margin-top: 0.5rem; }
+  .login-error { color: var(--red); font-size: 0.85rem; text-align: center; margin-top: 0.75rem; display: none; }
+  .login-error.show { display: block; }
+
+  /* User bar */
+  .user-bar {
+    display: flex; align-items: center; gap: 0.75rem;
+    float: right; margin-top: -0.25rem;
+  }
+  .user-bar .username { font-size: 0.85rem; opacity: 0.9; }
+  .user-bar .btn-logout {
+    background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3);
+    padding: 0.3rem 0.75rem; border-radius: 6px; font-size: 0.8rem; cursor: pointer;
+  }
+  .user-bar .btn-logout:hover { background: rgba(255,255,255,0.25); }
+
   @media (max-width: 640px) {
     .container { padding: 0.75rem; }
     .chart-grid { grid-template-columns: 1fr; }
@@ -170,8 +201,33 @@
 </head>
 <body>
 
+<!-- Login Overlay -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-card">
+    <h2>FinXCloud</h2>
+    <p class="subtitle">Sign in to access the dashboard</p>
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="loginUser">Username</label>
+        <input type="text" id="loginUser" required autocomplete="username" placeholder="Username">
+      </div>
+      <div class="form-group">
+        <label for="loginPass">Password</label>
+        <input type="password" id="loginPass" required autocomplete="current-password" placeholder="Password">
+      </div>
+      <button type="submit" class="btn btn-primary" id="loginBtn">Sign In</button>
+    </form>
+    <div class="login-error" id="loginError">Invalid username or password</div>
+  </div>
+</div>
+
 <div class="header">
-  <h1>FinXCloud Dashboard</h1>
+  <h1>FinXCloud Dashboard
+    <span class="user-bar" id="userBar" style="display:none;">
+      <span class="username" id="userDisplay"></span>
+      <button class="btn-logout" id="logoutBtn">Logout</button>
+    </span>
+  </h1>
   <p>AWS Cost Optimization Tool</p>
 </div>
 
@@ -315,6 +371,74 @@
 </div>
 
 <script>
+// --- Auth ---
+let isAuthenticated = false;
+
+async function checkAuth() {
+  try {
+    const res = await fetch('/api/me');
+    if (res.ok) {
+      const data = await res.json();
+      showApp(data.username);
+      return;
+    }
+  } catch {}
+  showLogin();
+}
+
+function showLogin() {
+  isAuthenticated = false;
+  document.getElementById('loginOverlay').classList.remove('hidden');
+  document.getElementById('userBar').style.display = 'none';
+}
+
+function showApp(username) {
+  isAuthenticated = true;
+  document.getElementById('loginOverlay').classList.add('hidden');
+  document.getElementById('userBar').style.display = 'flex';
+  document.getElementById('userDisplay').textContent = username;
+}
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById('loginError');
+  errorEl.classList.remove('show');
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        username: document.getElementById('loginUser').value,
+        password: document.getElementById('loginPass').value,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      showApp(data.username);
+    } else {
+      errorEl.classList.add('show');
+    }
+  } catch {
+    errorEl.textContent = 'Connection error';
+    errorEl.classList.add('show');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  showLogin();
+});
+
+// Check auth on load (skip if static/embedded mode)
+if (typeof FINXCLOUD_EMBEDDED_DATA === 'undefined') {
+  checkAuth();
+}
+
 const COLORS = [
   '#2563eb','#16a34a','#ea580c','#9333ea','#dc2626',
   '#0891b2','#ca8a04','#4f46e5','#db2777','#059669'

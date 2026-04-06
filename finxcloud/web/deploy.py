@@ -9,23 +9,35 @@ from pathlib import Path
 import boto3
 from botocore.exceptions import ClientError
 
+from finxcloud.web.auth import hash_password_for_static
+
 log = logging.getLogger("finxcloud.deploy")
 
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-def build_static_dashboard(report_data: dict) -> str:
+def build_static_dashboard(report_data: dict, deploy_password: str | None = None) -> str:
     """Build a self-contained HTML dashboard with embedded report data.
 
     Reads the dashboard template and injects report JSON so the page
-    works without any backend.
+    works without any backend. Optionally adds a client-side password gate.
     """
     template_path = STATIC_DIR / "index.html"
     html = template_path.read_text(encoding="utf-8")
 
-    # Inject embedded data and auto-render script before closing </body>
-    embedded_script = (
-        "\n<script>\n"
+    # Build the embedded script
+    parts = ["\n<script>\n"]
+
+    # Add password gate if configured
+    if deploy_password:
+        password_hash = hash_password_for_static(deploy_password)
+        parts.append(
+            "// Client-side password gate for static deployment\n"
+            "var FINXCLOUD_DEPLOY_PASSWORD_HASH = '" + password_hash + "';\n"
+            "var FINXCLOUD_STATIC_AUTH = true;\n"
+        )
+
+    parts.append(
         "// Embedded report data for static/S3 deployment\n"
         "var FINXCLOUD_EMBEDDED_DATA = "
         + json.dumps(report_data, default=str)
@@ -33,10 +45,32 @@ def build_static_dashboard(report_data: dict) -> str:
         "// Auto-render on load in static mode\n"
         "document.addEventListener('DOMContentLoaded', function() {\n"
         "  document.querySelector('.scan-panel').style.display = 'none';\n"
-        "  renderDashboard(FINXCLOUD_EMBEDDED_DATA);\n"
+        "  if (typeof FINXCLOUD_STATIC_AUTH !== 'undefined' && FINXCLOUD_STATIC_AUTH) {\n"
+        "    showStaticLogin();\n"
+        "  } else {\n"
+        "    document.getElementById('loginOverlay').classList.add('hidden');\n"
+        "    renderDashboard(FINXCLOUD_EMBEDDED_DATA);\n"
+        "  }\n"
         "});\n"
-        "</script>\n"
+        "function showStaticLogin() {\n"
+        "  document.getElementById('loginOverlay').classList.remove('hidden');\n"
+        "  document.getElementById('loginForm').onsubmit = async function(e) {\n"
+        "    e.preventDefault();\n"
+        "    var pass = document.getElementById('loginPass').value;\n"
+        "    var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pass));\n"
+        "    var hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');\n"
+        "    if (hash === FINXCLOUD_DEPLOY_PASSWORD_HASH) {\n"
+        "      document.getElementById('loginOverlay').classList.add('hidden');\n"
+        "      renderDashboard(FINXCLOUD_EMBEDDED_DATA);\n"
+        "    } else {\n"
+        "      document.getElementById('loginError').classList.add('show');\n"
+        "    }\n"
+        "  };\n"
+        "}\n"
     )
+
+    parts.append("</script>\n")
+    embedded_script = "".join(parts)
     html = html.replace("</body>", embedded_script + "</body>")
     return html
 
@@ -46,6 +80,7 @@ def deploy_to_s3(
     bucket: str,
     report_data: dict,
     prefix: str = "",
+    deploy_password: str | None = None,
 ) -> str:
     """Deploy the dashboard to an S3 bucket with static website hosting.
 
@@ -108,7 +143,7 @@ def deploy_to_s3(
         log.warning("Could not set bucket policy: %s", e)
 
     # Build self-contained HTML
-    html = build_static_dashboard(report_data)
+    html = build_static_dashboard(report_data, deploy_password=deploy_password)
 
     # Upload
     key_prefix = f"{prefix.strip('/')}/" if prefix else ""

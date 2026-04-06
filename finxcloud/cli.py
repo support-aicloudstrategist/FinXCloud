@@ -359,6 +359,7 @@ def web(host: str, port: int, do_reload: bool) -> None:
 @click.option("--days", default=30, type=int, help="Cost analysis lookback period (if running a fresh scan).")
 @click.option("--skip-utilization", is_flag=True, help="Skip CloudWatch utilization checks.")
 @click.option("--from-reports", is_flag=True, help="Use existing local reports instead of running a new scan.")
+@click.option("--deploy-password", default=None, help="Password to protect the static dashboard (client-side gate).")
 def deploy(
     access_key: str,
     secret_key: str,
@@ -370,6 +371,7 @@ def deploy(
     days: int,
     skip_utilization: bool,
     from_reports: bool,
+    deploy_password: str | None,
 ) -> None:
     """Deploy the FinXCloud dashboard to S3 with a public URL.
 
@@ -475,7 +477,7 @@ def deploy(
 
     # Deploy to S3
     with console.status(f"[bold green]Deploying to S3 bucket '{bucket}'..."):
-        url = deploy_to_s3(session, bucket, report_data, prefix)
+        url = deploy_to_s3(session, bucket, report_data, prefix, deploy_password=deploy_password)
 
     console.print(f"\n  ✓ Dashboard deployed successfully!")
     console.print(f"\n  [bold green]🌐 Public URL: {url}[/bold green]\n")

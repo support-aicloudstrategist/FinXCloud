@@ -36,7 +36,15 @@ pip install -e ".[web]"
 finxcloud web
 
 # Opens at http://127.0.0.1:8000
-# Enter your AWS credentials in the form and click "Start Scan"
+# Default login: admin / admin
+```
+
+**Authentication**: The dashboard requires login. Configure credentials via environment variables:
+
+```bash
+export FINXCLOUD_ADMIN_USER=admin        # default: admin
+export FINXCLOUD_ADMIN_PASS=changeme     # default: admin
+export FINXCLOUD_JWT_SECRET=your-secret  # auto-generated if not set
 ```
 
 The web dashboard provides:
@@ -75,6 +83,8 @@ This will:
 2. Generate a self-contained HTML dashboard with embedded data
 3. Create/configure the S3 bucket for static website hosting
 4. Upload the dashboard and print the public URL
+
+Add `--deploy-password mysecret` to protect the S3 dashboard with a client-side password gate.
 
 The public URL will be: `http://<bucket>.s3-website-<region>.amazonaws.com`
 
