@@ -448,6 +448,7 @@
     <button class="nav-tab active" data-tab="accounts">Accounts</button>
     <button class="nav-tab" data-tab="scan">New Scan</button>
     <button class="nav-tab" data-tab="results" id="resultsTab" style="display:none;">Dashboard</button>
+    <button class="nav-tab" data-tab="budgets">Budgets</button>
     <button class="nav-tab" data-tab="schedules">Schedules</button>
     <button class="nav-tab" data-tab="notifications">Notifications</button>
   </div>
@@ -455,7 +456,7 @@
   <!-- Tab: Accounts -->
   <div class="tab-content active" id="tab-accounts">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-      <h2 style="font-size:1.1rem;color:var(--gray-700);">AWS Accounts</h2>
+      <h2 style="font-size:1.1rem;color:var(--gray-700);">Cloud Accounts</h2>
       <button class="btn btn-primary btn-sm" onclick="openAddAccountModal()">+ Add Account</button>
     </div>
     <div class="account-grid" id="accountGrid">
@@ -478,38 +479,101 @@
       <form id="scanForm">
         <div class="form-grid" id="manualCredFields">
           <div class="form-group">
-            <label for="accessKey">AWS Access Key ID *</label>
-            <input type="text" id="accessKey" placeholder="AKIA...">
-          </div>
-          <div class="form-group">
-            <label for="secretKey">AWS Secret Access Key *</label>
-            <input type="password" id="secretKey" placeholder="Secret key">
-          </div>
-          <div class="form-group">
-            <label for="sessionToken">Session Token (optional)</label>
-            <input type="text" id="sessionToken" placeholder="Optional">
-          </div>
-          <div class="form-group">
-            <label for="roleArn">IAM Role ARN (optional)</label>
-            <input type="text" id="roleArn" placeholder="arn:aws:iam::123456789012:role/...">
-          </div>
-          <div class="form-group">
-            <label for="region">Default Region</label>
-            <select id="region">
-              <option value="us-east-1" selected>us-east-1</option>
-              <option value="us-east-2">us-east-2</option>
-              <option value="us-west-1">us-west-1</option>
-              <option value="us-west-2">us-west-2</option>
-              <option value="eu-west-1">eu-west-1</option>
-              <option value="eu-central-1">eu-central-1</option>
-              <option value="ap-south-1">ap-south-1</option>
-              <option value="ap-southeast-1">ap-southeast-1</option>
-              <option value="ap-northeast-1">ap-northeast-1</option>
+            <label for="scanProvider">Cloud Provider</label>
+            <select id="scanProvider" onchange="toggleScanProviderFields()">
+              <option value="aws" selected>Amazon Web Services (AWS)</option>
+              <option value="azure">Microsoft Azure</option>
+              <option value="gcp">Google Cloud Platform (GCP)</option>
             </select>
           </div>
-          <div class="form-group">
-            <label for="regions">Regions to Scan (comma-separated, blank=all)</label>
-            <input type="text" id="regions" placeholder="e.g. us-east-1,eu-west-1">
+          <!-- AWS Scan Fields -->
+          <div id="scanAwsFields" style="display:contents;">
+            <div class="form-group">
+              <label for="accessKey">AWS Access Key ID *</label>
+              <input type="text" id="accessKey" placeholder="AKIA...">
+            </div>
+            <div class="form-group">
+              <label for="secretKey">AWS Secret Access Key *</label>
+              <input type="password" id="secretKey" placeholder="Secret key">
+            </div>
+            <div class="form-group">
+              <label for="sessionToken">Session Token (optional)</label>
+              <input type="text" id="sessionToken" placeholder="Optional">
+            </div>
+            <div class="form-group">
+              <label for="roleArn">IAM Role ARN (optional)</label>
+              <input type="text" id="roleArn" placeholder="arn:aws:iam::123456789012:role/...">
+            </div>
+            <div class="form-group">
+              <label for="region">Default Region</label>
+              <select id="region">
+                <option value="us-east-1" selected>us-east-1</option>
+                <option value="us-east-2">us-east-2</option>
+                <option value="us-west-1">us-west-1</option>
+                <option value="us-west-2">us-west-2</option>
+                <option value="eu-west-1">eu-west-1</option>
+                <option value="eu-central-1">eu-central-1</option>
+                <option value="ap-south-1">ap-south-1</option>
+                <option value="ap-southeast-1">ap-southeast-1</option>
+                <option value="ap-northeast-1">ap-northeast-1</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="regions">Regions to Scan (comma-separated, blank=all)</label>
+              <input type="text" id="regions" placeholder="e.g. us-east-1,eu-west-1">
+            </div>
+          </div>
+          <!-- Azure Scan Fields -->
+          <div id="scanAzureFields" style="display:none;">
+            <div class="form-group">
+              <label for="scanAzureSubscriptionId">Subscription ID *</label>
+              <input type="text" id="scanAzureSubscriptionId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+            </div>
+            <div class="form-group">
+              <label for="scanAzureTenantId">Tenant ID</label>
+              <input type="text" id="scanAzureTenantId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+            </div>
+            <div class="form-group">
+              <label for="scanAzureClientId">Client ID</label>
+              <input type="text" id="scanAzureClientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+            </div>
+            <div class="form-group">
+              <label for="scanAzureClientSecret">Client Secret</label>
+              <input type="password" id="scanAzureClientSecret" placeholder="Service Principal secret">
+            </div>
+            <div class="form-group">
+              <label for="scanAzureRegion">Default Region</label>
+              <select id="scanAzureRegion">
+                <option value="eastus" selected>East US</option>
+                <option value="westus2">West US 2</option>
+                <option value="westeurope">West Europe</option>
+                <option value="northeurope">North Europe</option>
+                <option value="centralindia">Central India</option>
+                <option value="southeastasia">Southeast Asia</option>
+              </select>
+            </div>
+          </div>
+          <!-- GCP Scan Fields -->
+          <div id="scanGcpFields" style="display:none;">
+            <div class="form-group">
+              <label for="scanGcpProjectId">Project ID *</label>
+              <input type="text" id="scanGcpProjectId" placeholder="my-project-123">
+            </div>
+            <div class="form-group">
+              <label for="scanGcpServiceAccountJson">Service Account JSON Key</label>
+              <textarea id="scanGcpServiceAccountJson" rows="3" placeholder='Paste service account JSON key...' style="font-family:monospace;font-size:0.85rem;width:100%;padding:0.5rem 0.75rem;border:1px solid var(--gray-300);border-radius:6px;"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="scanGcpRegion">Default Region</label>
+              <select id="scanGcpRegion">
+                <option value="us-central1" selected>us-central1</option>
+                <option value="us-east1">us-east1</option>
+                <option value="us-west1">us-west1</option>
+                <option value="europe-west1">europe-west1</option>
+                <option value="asia-south1">asia-south1</option>
+                <option value="asia-southeast1">asia-southeast1</option>
+              </select>
+            </div>
           </div>
           <div class="form-group">
             <label for="days">Lookback Period (days)</label>
@@ -518,16 +582,16 @@
         </div>
         <div class="form-grid" style="margin-top:0.5rem;">
           <div class="form-group">
-            <label for="allocationTags">Cost Allocation Tags</label>
+            <label for="allocationTags">Cost Allocation Tags (AWS only)</label>
             <input type="text" id="allocationTags" placeholder="e.g. Team,Project,Environment">
           </div>
         </div>
         <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;">
-          <div class="checkbox-group">
+          <div class="checkbox-group" id="orgScanGroup">
             <input type="checkbox" id="orgScan">
             <label for="orgScan">Scan all Organization accounts</label>
           </div>
-          <div class="checkbox-group">
+          <div class="checkbox-group" id="skipUtilGroup">
             <input type="checkbox" id="skipUtil">
             <label for="skipUtil">Skip utilization checks (faster)</label>
           </div>
@@ -677,6 +741,36 @@
         <div id="roadmapCards"></div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- Tab: Budgets -->
+  <div class="tab-content" id="tab-budgets">
+    <div class="scan-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h2 style="font-size:1.1rem;color:var(--gray-700);">Monthly Budgets</h2>
+      </div>
+      <p style="color:var(--gray-500);font-size:0.85rem;margin-bottom:1rem;">
+        Set monthly cost budgets per account. Budget vs. actual is shown on the dashboard after a scan.
+      </p>
+      <div style="background:#fff;border-radius:var(--radius);padding:1rem;margin-bottom:1rem;">
+        <div class="form-grid" style="grid-template-columns:1fr 1fr auto;align-items:end;">
+          <div class="form-group">
+            <label for="budgetAccountSelect">Account</label>
+            <select id="budgetAccountSelect" style="width:100%;padding:0.5rem 0.75rem;border:1px solid var(--gray-300);border-radius:6px;font-size:0.9rem;">
+              <option value="">-- Select account --</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="budgetAmount">Monthly Budget (USD)</label>
+            <input type="number" id="budgetAmount" min="0" step="0.01" placeholder="e.g. 5000" style="width:100%;padding:0.5rem 0.75rem;border:1px solid var(--gray-300);border-radius:6px;font-size:0.9rem;">
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" onclick="saveBudget()" style="margin-bottom:0.25rem;">Set Budget</button>
+        </div>
+      </div>
+      <div id="budgetList">
+        <p style="color:var(--gray-500);text-align:center;padding:2rem;">Loading budgets...</p>
+      </div>
     </div>
   </div>
 
@@ -948,6 +1042,15 @@ document.getElementById('scanAccountSelect').addEventListener('change', function
   }
 });
 
+function toggleScanProviderFields() {
+  const provider = document.getElementById('scanProvider').value;
+  document.getElementById('scanAwsFields').style.display = provider === 'aws' ? 'contents' : 'none';
+  document.getElementById('scanAzureFields').style.display = provider === 'azure' ? 'contents' : 'none';
+  document.getElementById('scanGcpFields').style.display = provider === 'gcp' ? 'contents' : 'none';
+  document.getElementById('orgScanGroup').style.display = provider === 'aws' ? '' : 'none';
+  document.getElementById('skipUtilGroup').style.display = provider === 'aws' ? '' : 'none';
+}
+
 function toggleProviderFields() {
   const provider = document.getElementById('acctProvider').value;
   document.getElementById('awsFields').style.display = provider === 'aws' ? '' : 'none';
@@ -1064,19 +1167,34 @@ document.getElementById('scanForm').addEventListener('submit', async (e) => {
 
   const storedAccountId = document.getElementById('scanAccountSelect').value;
 
+  const scanProvider = document.getElementById('scanProvider').value;
   const body = {
-    access_key: document.getElementById('accessKey').value || 'placeholder',
-    secret_key: document.getElementById('secretKey').value || 'placeholder',
-    session_token: document.getElementById('sessionToken').value || null,
-    role_arn: document.getElementById('roleArn').value || null,
-    region: document.getElementById('region').value,
-    regions: document.getElementById('regions').value || null,
+    provider: scanProvider,
     days: parseInt(document.getElementById('days').value) || 30,
-    org_scan: document.getElementById('orgScan').checked,
-    skip_utilization: document.getElementById('skipUtil').checked,
     allocation_tags: document.getElementById('allocationTags').value || null,
     stored_account_id: storedAccountId || null,
   };
+
+  if (scanProvider === 'aws') {
+    body.access_key = document.getElementById('accessKey').value || 'placeholder';
+    body.secret_key = document.getElementById('secretKey').value || 'placeholder';
+    body.session_token = document.getElementById('sessionToken').value || null;
+    body.role_arn = document.getElementById('roleArn').value || null;
+    body.region = document.getElementById('region').value;
+    body.regions = document.getElementById('regions').value || null;
+    body.org_scan = document.getElementById('orgScan').checked;
+    body.skip_utilization = document.getElementById('skipUtil').checked;
+  } else if (scanProvider === 'azure') {
+    body.azure_subscription_id = document.getElementById('scanAzureSubscriptionId').value;
+    body.azure_tenant_id = document.getElementById('scanAzureTenantId').value || null;
+    body.azure_client_id = document.getElementById('scanAzureClientId').value || null;
+    body.azure_client_secret = document.getElementById('scanAzureClientSecret').value || null;
+    body.region = document.getElementById('scanAzureRegion').value;
+  } else if (scanProvider === 'gcp') {
+    body.gcp_project_id = document.getElementById('scanGcpProjectId').value;
+    body.gcp_service_account_json = document.getElementById('scanGcpServiceAccountJson').value || null;
+    body.region = document.getElementById('scanGcpRegion').value;
+  }
 
   try {
     const startRes = await fetch('/api/scan', {
@@ -1680,12 +1798,93 @@ async function testWebhook(id, url) {
   }
 }
 
-// Load schedules and webhooks on tab switch
+// ===================================================================
+// BUDGETS
+// ===================================================================
+async function loadBudgets() {
+  try {
+    const res = await fetch('/api/budgets');
+    if (!res.ok) return;
+    const budgets = await res.json();
+    renderBudgetList(budgets);
+  } catch {}
+}
+
+function renderBudgetList(budgets) {
+  const el = document.getElementById('budgetList');
+  const entries = Object.entries(budgets || {});
+  if (!entries.length) {
+    el.innerHTML = '<p style="color:var(--gray-500);text-align:center;padding:2rem;">No budgets set. Select an account above and set a monthly budget.</p>';
+    return;
+  }
+  let html = '<table><thead><tr><th>Account ID</th><th>Monthly Budget</th><th>Actions</th></tr></thead><tbody>';
+  for (const [accountId, amount] of entries) {
+    html += `<tr>
+      <td><code>${esc(accountId)}</code></td>
+      <td class="amount-cost">$${parseFloat(amount).toFixed(2)}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="removeBudget('${esc(accountId)}')">Remove</button></td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+async function populateBudgetAccountSelect() {
+  try {
+    const res = await fetch('/api/accounts');
+    if (!res.ok) return;
+    const accounts = await res.json();
+    const sel = document.getElementById('budgetAccountSelect');
+    sel.innerHTML = '<option value="">-- Select account --</option>';
+    accounts.forEach(a => {
+      const pLabel = {aws:'AWS',azure:'Azure',gcp:'GCP'}[a.provider||'aws']||a.provider;
+      sel.innerHTML += `<option value="${a.id}">[${pLabel}] ${esc(a.name)}</option>`;
+    });
+  } catch {}
+}
+
+async function saveBudget() {
+  const accountId = document.getElementById('budgetAccountSelect').value;
+  const amount = parseFloat(document.getElementById('budgetAmount').value);
+  if (!accountId) { alert('Please select an account.'); return; }
+  if (isNaN(amount) || amount < 0) { alert('Please enter a valid budget amount.'); return; }
+  try {
+    const res = await fetch('/api/budgets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId, monthly_budget: amount }),
+    });
+    if (res.ok) {
+      document.getElementById('budgetAmount').value = '';
+      loadBudgets();
+    } else {
+      const err = await res.json();
+      alert('Failed to set budget: ' + (err.detail || 'Unknown error'));
+    }
+  } catch (e) {
+    alert('Failed to set budget: ' + e.message);
+  }
+}
+
+async function removeBudget(accountId) {
+  if (!confirm('Remove budget for this account?')) return;
+  try {
+    await fetch('/api/budgets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId, monthly_budget: 0 }),
+    });
+    loadBudgets();
+  } catch {}
+}
+
+// Load schedules, webhooks, and budgets on tab switch
 const origSwitchTab = switchTab;
 switchTab = function(tabName) {
   origSwitchTab(tabName);
   if (tabName === 'schedules') loadSchedules();
   if (tabName === 'notifications') loadWebhooks();
+  if (tabName === 'budgets') { loadBudgets(); populateBudgetAccountSelect(); }
 };
 </script>
 
