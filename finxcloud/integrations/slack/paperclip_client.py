@@ -163,6 +163,75 @@ class PaperclipClient(TaskStore):
             {},
         )
 
+    # ---- Ticket commands (extended) ------------------------------------------
+
+    def list_issues(
+        self,
+        status: str | None = None,
+        priority: str | None = None,
+        assignee: str | None = None,
+        project_id: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """List issues with optional filters."""
+        params = []
+        if status:
+            params.append(f"status={status}")
+        else:
+            params.append("status=todo,in_progress,blocked,in_review")
+        if priority:
+            params.append(f"priority={priority}")
+        if assignee:
+            agent_id = self.user_map.get(assignee) or self._resolve_agent_id(assignee)
+            if agent_id:
+                params.append(f"assigneeAgentId={agent_id}")
+        if project_id:
+            params.append(f"projectId={project_id}")
+        params.append(f"limit={limit}")
+        qs = "&".join(params)
+        results = self._api_call("GET", f"/api/companies/{self.company_id}/issues?{qs}")
+        if not isinstance(results, list):
+            results = results.get("items", results.get("data", []))
+        return [_normalise_issue(i) for i in results]
+
+    def search_issues(self, query: str) -> list[dict[str, Any]]:
+        """Search issues by title/description/comments."""
+        import urllib.parse
+        encoded = urllib.parse.quote(query)
+        results = self._api_call(
+            "GET",
+            f"/api/companies/{self.company_id}/issues?q={encoded}",
+        )
+        if not isinstance(results, list):
+            results = results.get("items", results.get("data", []))
+        return [_normalise_issue(i) for i in results]
+
+    def get_issue_detail(self, identifier: str) -> dict[str, Any] | None:
+        """Get full issue detail including comments."""
+        task = self.get_task(identifier)
+        if not task or not task.get("id"):
+            return None
+        comments = self.get_issue_comments(task["id"])
+        task["comments"] = comments if isinstance(comments, list) else []
+        return task
+
+    def list_approvals(self, status: str = "pending") -> list[dict[str, Any]]:
+        """List company approvals, default to pending."""
+        results = self._api_call(
+            "GET",
+            f"/api/companies/{self.company_id}/approvals?status={status}",
+        )
+        if not isinstance(results, list):
+            results = results.get("items", results.get("data", []))
+        return results
+
+    def get_issue_approvals(self, issue_id: str) -> list[dict[str, Any]]:
+        """Get approvals linked to an issue."""
+        results = self._api_call("GET", f"/api/issues/{issue_id}/approvals")
+        if not isinstance(results, list):
+            results = results.get("items", results.get("data", []))
+        return results
+
     # ---- HTTP plumbing ------------------------------------------------------
 
     def _api_call(

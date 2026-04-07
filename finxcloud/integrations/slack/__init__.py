@@ -2,7 +2,14 @@
 
 from finxcloud.integrations.slack.bot import SlackBot
 from finxcloud.integrations.slack.client import SlackClient
-from finxcloud.integrations.slack.commands import CommandResult, handle_agent_command, handle_task_command, parse_command
+from finxcloud.integrations.slack.commands import (
+    CommandResult,
+    handle_agent_command,
+    handle_task_command,
+    handle_ticket_command,
+    parse_command,
+    parse_ticket_command,
+)
 from finxcloud.integrations.slack.formatters import format_event
 from finxcloud.integrations.slack.notifier import SlackNotifier
 from finxcloud.integrations.slack.paperclip_client import PaperclipClient
@@ -16,5 +23,7 @@ __all__ = [
     "format_event",
     "handle_agent_command",
     "handle_task_command",
+    "handle_ticket_command",
     "parse_command",
+    "parse_ticket_command",
 ]

@@ -1,4 +1,4 @@
-"""Slack slash command parser and executor for task and agent management.
+"""Slack slash command parser and executor for task, agent, and ticket management.
 
 Handles /task slash commands:
     /task create <title>       — Create a new task
@@ -12,6 +12,14 @@ Handles /agent slash commands:
     /agent wake <name>         — Trigger a heartbeat run
     /agent runs <name>         — Show recent runs
     /agent help                — Show available agent commands
+
+Handles /ticket slash commands:
+    /ticket list [filters]     — List open issues with optional filters
+    /ticket search <query>     — Search issues by title/description
+    /ticket <id>               — Show full issue detail with comments
+    /ticket comment <id> <text>— Add a comment to any issue
+    /ticket approve <id>       — Show pending approvals for an issue
+    /ticket help               — Show available ticket commands
 """
 
 from __future__ import annotations
@@ -653,6 +661,492 @@ def _handle_agent_help(
         {
             "type": "header",
             "text": {"type": "plain_text", "text": ":robot_face: Agent Bot Commands"},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": help_text},
+        },
+    ]
+
+    return CommandResult(text=help_text, blocks=blocks, ephemeral=True)
+
+
+# ---------------------------------------------------------------------------
+# Ticket commands (/ticket list, /ticket search, /ticket <id>, etc.)
+# ---------------------------------------------------------------------------
+
+_TICKET_IDENTIFIER_RE = re.compile(r"^[A-Za-z]+-\d+$")
+
+
+def parse_ticket_command(text: str) -> tuple[str, list[str]]:
+    """Parse /ticket command text into action and arguments.
+
+    Handles the special case where the action itself is an issue identifier
+    (e.g. ``/ticket AIC-43`` maps to action ``detail``).
+
+    Returns:
+        Tuple of (action, args list).
+    """
+    parts = text.strip().split(None, 1)
+    if not parts:
+        return "help", []
+    action = parts[0]
+    rest = parts[1] if len(parts) > 1 else ""
+
+    # If action looks like an issue identifier, treat as detail lookup
+    if _TICKET_IDENTIFIER_RE.match(action):
+        return "detail", [action]
+
+    action_lower = action.lower()
+    if action_lower == "comment" and rest:
+        # /ticket comment AIC-43 some text here
+        comment_parts = rest.split(None, 1)
+        identifier = comment_parts[0] if comment_parts else ""
+        body = comment_parts[1] if len(comment_parts) > 1 else ""
+        return "comment", [identifier, body]
+    if action_lower == "search" and rest:
+        return "search", [rest]
+
+    args = rest.split() if rest else []
+    return action_lower, args
+
+
+def handle_ticket_command(
+    action: str,
+    args: list[str],
+    user_id: str,
+    user_name: str,
+    paperclip_client: Any | None = None,
+) -> CommandResult:
+    """Route a parsed /ticket command to the appropriate handler."""
+    if paperclip_client is None:
+        return CommandResult(
+            text="Ticket commands require a Paperclip connection.",
+            blocks=_error_blocks(
+                "Not configured",
+                "Paperclip API is not configured. Ticket commands are unavailable.",
+            ),
+        )
+
+    handlers = {
+        "list": _handle_ticket_list,
+        "search": _handle_ticket_search,
+        "detail": _handle_ticket_detail,
+        "comment": _handle_ticket_comment,
+        "approve": _handle_ticket_approve,
+        "help": _handle_ticket_help,
+    }
+
+    handler = handlers.get(action)
+    if not handler:
+        # Check if action looks like an identifier that wasn't caught by parse
+        if _TICKET_IDENTIFIER_RE.match(action):
+            return _handle_ticket_detail([action], user_id, user_name, paperclip_client)
+        return CommandResult(
+            text=f"Unknown ticket command: `{action}`. Try `/ticket help`.",
+            blocks=_error_blocks(
+                f"Unknown command: `{action}`",
+                "Try `/ticket help` for available commands.",
+            ),
+        )
+
+    return handler(args, user_id, user_name, paperclip_client)
+
+
+def _handle_ticket_list(
+    args: list[str], user_id: str, user_name: str, client: Any
+) -> CommandResult:
+    """List open issues with optional filters.
+
+    Supports flags: --status, --priority, --assignee, --project
+    e.g. /ticket list --status in_progress --priority high
+    """
+    status = None
+    priority = None
+    assignee = None
+    project_id = None
+
+    i = 0
+    while i < len(args):
+        flag = args[i].lower()
+        val = args[i + 1] if i + 1 < len(args) else None
+        if flag == "--status" and val:
+            status = val
+            i += 2
+        elif flag == "--priority" and val:
+            priority = val
+            i += 2
+        elif flag == "--assignee" and val:
+            assignee = val
+            i += 2
+        elif flag == "--project" and val:
+            project_id = val
+            i += 2
+        else:
+            i += 1
+
+    issues = client.list_issues(
+        status=status,
+        priority=priority,
+        assignee=assignee,
+        project_id=project_id,
+    )
+
+    if not issues:
+        filter_desc = ""
+        if status:
+            filter_desc += f" status={status}"
+        if priority:
+            filter_desc += f" priority={priority}"
+        return CommandResult(
+            text=f"No issues found{filter_desc}.",
+            blocks=[{
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f":clipboard: *No issues found{filter_desc}.*"},
+            }],
+            ephemeral=True,
+        )
+
+    status_emoji = {
+        "todo": ":clipboard:",
+        "in_progress": ":hammer_and_wrench:",
+        "done": ":white_check_mark:",
+        "blocked": ":no_entry:",
+        "in_review": ":mag:",
+        "backlog": ":inbox_tray:",
+    }
+
+    lines = []
+    for t in issues[:20]:
+        emoji = status_emoji.get(t["status"], ":grey_question:")
+        assignee_str = t.get("assignee") or "unassigned"
+        lines.append(
+            f"{emoji} `{t['identifier']}` — {t['title']} ({t['status']}) · {assignee_str}"
+        )
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": ":ticket: Issues"},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "\n".join(lines)},
+        },
+    ]
+
+    if len(issues) > 20:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"_Showing 20 of {len(issues)} issues_"}],
+        })
+
+    return CommandResult(
+        text=f"{len(issues)} issues found",
+        blocks=blocks,
+    )
+
+
+def _handle_ticket_search(
+    args: list[str], user_id: str, user_name: str, client: Any
+) -> CommandResult:
+    """Search issues by title/description."""
+    if not args:
+        return CommandResult(
+            text="Usage: `/ticket search <query>`",
+            blocks=_error_blocks("Missing query", "Usage: `/ticket search <query>`"),
+            ephemeral=True,
+        )
+
+    query = args[0] if len(args) == 1 else " ".join(args)
+    issues = client.search_issues(query)
+
+    if not issues:
+        return CommandResult(
+            text=f"No issues found for \"{query}\".",
+            blocks=[{
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f":mag: *No issues found for \"{query}\".*"},
+            }],
+            ephemeral=True,
+        )
+
+    lines = []
+    for t in issues[:15]:
+        status_emoji = {
+            "todo": ":clipboard:",
+            "in_progress": ":hammer_and_wrench:",
+            "done": ":white_check_mark:",
+            "blocked": ":no_entry:",
+            "in_review": ":mag:",
+        }.get(t["status"], ":grey_question:")
+        lines.append(f"{status_emoji} `{t['identifier']}` — {t['title']} ({t['status']})")
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f":mag: Search: \"{query}\""},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "\n".join(lines)},
+        },
+    ]
+
+    if len(issues) > 15:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"_Showing 15 of {len(issues)} results_"}],
+        })
+
+    return CommandResult(
+        text=f"{len(issues)} results for \"{query}\"",
+        blocks=blocks,
+    )
+
+
+def _handle_ticket_detail(
+    args: list[str], user_id: str, user_name: str, client: Any
+) -> CommandResult:
+    """Show full issue detail with comments."""
+    if not args:
+        return CommandResult(
+            text="Usage: `/ticket <identifier>`",
+            blocks=_error_blocks("Missing identifier", "Usage: `/ticket <identifier>` (e.g. `/ticket AIC-43`)"),
+            ephemeral=True,
+        )
+
+    identifier = args[0].upper()
+    issue = client.get_issue_detail(identifier)
+    if not issue:
+        return CommandResult(
+            text=f"Issue `{identifier}` not found.",
+            blocks=_error_blocks(f"Issue `{identifier}` not found", "Check the identifier and try again."),
+            ephemeral=True,
+        )
+
+    status_emoji = {
+        "todo": ":clipboard:",
+        "in_progress": ":hammer_and_wrench:",
+        "done": ":white_check_mark:",
+        "blocked": ":no_entry:",
+        "in_review": ":mag:",
+        "backlog": ":inbox_tray:",
+    }.get(issue["status"], ":grey_question:")
+
+    fields = [
+        {"type": "mrkdwn", "text": f"*Identifier:*\n{issue['identifier']}"},
+        {"type": "mrkdwn", "text": f"*Status:*\n{status_emoji} {issue['status']}"},
+        {"type": "mrkdwn", "text": f"*Priority:*\n{issue.get('priority', 'medium')}"},
+        {"type": "mrkdwn", "text": f"*Assignee:*\n{issue.get('assignee') or 'Unassigned'}"},
+    ]
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"{status_emoji} {issue['identifier']} — {issue['title'][:60]}"},
+        },
+        {
+            "type": "section",
+            "fields": fields,
+        },
+    ]
+
+    # Show comments if present
+    comments = issue.get("comments", [])
+    if comments:
+        comment_lines = []
+        for c in comments[-5:]:  # Show last 5 comments
+            author = c.get("authorAgentId") or c.get("authorUserId") or "system"
+            body = c.get("body", "")
+            # Truncate long comments
+            if len(body) > 200:
+                body = body[:200] + "…"
+            comment_lines.append(f"> *{author}:* {body}")
+
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Recent Comments ({len(comments)} total):*\n" + "\n".join(comment_lines),
+            },
+        })
+
+    blocks.append({
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": f"Use `/ticket comment {issue['identifier']} <text>` to add a comment"}],
+    })
+
+    return CommandResult(
+        text=f"{issue['identifier']}: {issue['title']} ({issue['status']})",
+        blocks=blocks,
+    )
+
+
+def _handle_ticket_comment(
+    args: list[str], user_id: str, user_name: str, client: Any
+) -> CommandResult:
+    """Add a comment to an issue."""
+    if len(args) < 2 or not args[1]:
+        return CommandResult(
+            text="Usage: `/ticket comment <identifier> <text>`",
+            blocks=_error_blocks("Missing arguments", "Usage: `/ticket comment <identifier> <text>`"),
+            ephemeral=True,
+        )
+
+    identifier = args[0].upper()
+    comment_body = args[1]
+
+    # Resolve issue ID
+    task = client.get_task(identifier)
+    if not task or not task.get("id"):
+        return CommandResult(
+            text=f"Issue `{identifier}` not found.",
+            blocks=_error_blocks(f"Issue `{identifier}` not found", "Check the identifier and try again."),
+            ephemeral=True,
+        )
+
+    result = client.add_comment(task["id"], f"_via Slack from <@{user_id}>:_\n\n{comment_body}")
+    if not result or result.get("error"):
+        return CommandResult(
+            text=f"Failed to add comment to {identifier}.",
+            blocks=_error_blocks("Comment failed", "Could not add comment. Please try again."),
+        )
+
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f":speech_balloon: *Comment added to {identifier}*\n> {comment_body}",
+            },
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"Posted by <@{user_id}>"}],
+        },
+    ]
+
+    return CommandResult(
+        text=f"Comment added to {identifier}",
+        blocks=blocks,
+    )
+
+
+def _handle_ticket_approve(
+    args: list[str], user_id: str, user_name: str, client: Any
+) -> CommandResult:
+    """Show pending approvals for an issue or list all pending approvals."""
+    if not args:
+        # List all pending approvals
+        approvals = client.list_approvals(status="pending")
+        if not approvals:
+            return CommandResult(
+                text="No pending approvals.",
+                blocks=[{
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": ":white_check_mark: *No pending approvals.*"},
+                }],
+                ephemeral=True,
+            )
+
+        lines = []
+        for a in approvals[:15]:
+            a_id = a.get("id", "—")[:8]
+            a_type = a.get("type", "unknown")
+            a_status = a.get("status", "pending")
+            lines.append(f":hourglass_flowing_sand: `{a_id}` — {a_type} ({a_status})")
+
+        blocks = [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": ":ballot_box_with_check: Pending Approvals"},
+            },
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "\n".join(lines)},
+            },
+            {
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": "Approvals must be resolved by board members via the Paperclip dashboard."}],
+            },
+        ]
+
+        return CommandResult(
+            text=f"{len(approvals)} pending approvals",
+            blocks=blocks,
+        )
+
+    # Show approvals for a specific issue
+    identifier = args[0].upper()
+    task = client.get_task(identifier)
+    if not task or not task.get("id"):
+        return CommandResult(
+            text=f"Issue `{identifier}` not found.",
+            blocks=_error_blocks(f"Issue `{identifier}` not found", "Check the identifier and try again."),
+            ephemeral=True,
+        )
+
+    approvals = client.get_issue_approvals(task["id"])
+    if not approvals:
+        return CommandResult(
+            text=f"No approvals linked to {identifier}.",
+            blocks=[{
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f":ballot_box_with_check: *No approvals linked to {identifier}.*"},
+            }],
+            ephemeral=True,
+        )
+
+    lines = []
+    for a in approvals:
+        a_id = a.get("id", "—")[:8]
+        a_type = a.get("type", "unknown")
+        a_status = a.get("status", "pending")
+        emoji = ":hourglass_flowing_sand:" if a_status == "pending" else ":white_check_mark:"
+        lines.append(f"{emoji} `{a_id}` — {a_type} ({a_status})")
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f":ballot_box_with_check: Approvals — {identifier}"},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "\n".join(lines)},
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": "Approvals must be resolved by board members via the Paperclip dashboard."}],
+        },
+    ]
+
+    return CommandResult(
+        text=f"{len(approvals)} approvals for {identifier}",
+        blocks=blocks,
+    )
+
+
+def _handle_ticket_help(
+    args: list[str], user_id: str, user_name: str, client: Any
+) -> CommandResult:
+    """Show available ticket commands."""
+    help_text = (
+        "*Available ticket commands:*\n"
+        "- `/ticket list` — List open issues (filters: `--status`, `--priority`, `--assignee`, `--project`)\n"
+        "- `/ticket search <query>` — Search issues by title/description\n"
+        "- `/ticket <identifier>` — Show full issue detail with comments\n"
+        "- `/ticket comment <identifier> <text>` — Add a comment to any issue\n"
+        "- `/ticket approve` — List pending approvals\n"
+        "- `/ticket approve <identifier>` — Show approvals for a specific issue\n"
+        "- `/ticket help` — Show this help message"
+    )
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": ":ticket: Ticket Bot Commands"},
         },
         {
             "type": "section",

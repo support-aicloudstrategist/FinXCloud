@@ -20,7 +20,9 @@ from finxcloud.integrations.slack.commands import (
     TaskStore,
     handle_agent_command,
     handle_task_command,
+    handle_ticket_command,
     parse_command,
+    parse_ticket_command,
 )
 
 log = logging.getLogger(__name__)
@@ -131,6 +133,37 @@ class SlackBot:
 
         action, args = parse_command(text)
         result = handle_agent_command(
+            action=action,
+            args=args,
+            user_id=user_id,
+            user_name=user_name,
+            paperclip_client=self.task_store,
+        )
+
+        response_type = "ephemeral" if result.ephemeral else "in_channel"
+        return {
+            "response_type": response_type,
+            "text": result.text,
+            "blocks": result.blocks,
+        }
+
+    def handle_ticket_slash_command(self, form_data: dict[str, str]) -> dict[str, Any]:
+        """Process a Slack /ticket slash command payload.
+
+        Args:
+            form_data: Parsed form body from Slack (command, text, user_id, etc.).
+
+        Returns:
+            Slack response dict (response_type + blocks/text).
+        """
+        text = form_data.get("text", "")
+        user_id = form_data.get("user_id", "")
+        user_name = form_data.get("user_name", "unknown")
+
+        log.info("Ticket command from %s: /ticket %s", user_name, text)
+
+        action, args = parse_ticket_command(text)
+        result = handle_ticket_command(
             action=action,
             args=args,
             user_id=user_id,
