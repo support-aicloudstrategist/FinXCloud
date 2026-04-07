@@ -59,10 +59,27 @@ def _assume_role(
 ) -> boto3.Session:
     """Assume an IAM role and return a new session with temporary credentials."""
     sts = session.client("sts")
-    response = sts.assume_role(
-        RoleArn=role_arn,
-        RoleSessionName="FinXCloud-AssumedRole",
-    )
+    try:
+        response = sts.assume_role(
+            RoleArn=role_arn,
+            RoleSessionName="FinXCloud-AssumedRole",
+        )
+    except sts.exceptions.ClientError as exc:
+        error_code = exc.response.get("Error", {}).get("Code", "")
+        if error_code == "AccessDenied":
+            # Extract account IDs for a helpful error message
+            caller = sts.get_caller_identity()
+            source_account = caller.get("Account", "unknown")
+            target_account = role_arn.split(":")[4] if ":" in role_arn else "unknown"
+            raise RuntimeError(
+                f"Cannot assume role {role_arn}. "
+                f"Your IAM user in account {source_account} is not authorized to assume this role in account {target_account}. "
+                f"To fix this: (1) ensure the role exists in the target account, "
+                f"(2) add a trust policy on the role allowing account {source_account}, and "
+                f"(3) grant your IAM user sts:AssumeRole permission. "
+                f"Alternatively, use access keys that belong directly to account {target_account} without a role ARN."
+            ) from exc
+        raise
     temp = response["Credentials"]
     return boto3.Session(
         aws_access_key_id=temp["AccessKeyId"],
