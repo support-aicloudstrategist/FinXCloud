@@ -21,6 +21,9 @@ class EventType(str, Enum):
     TASK_CREATED = "task_created"
     TASK_COMPLETED = "task_completed"
     TASK_BLOCKED = "task_blocked"
+    ISSUE_STATUS_CHANGED = "issue_status_changed"
+    AGENT_RUN_STARTED = "agent_run_started"
+    AGENT_RUN_COMPLETED = "agent_run_completed"
     APPROVAL_REQUESTED = "approval_requested"
     APPROVAL_RESOLVED = "approval_resolved"
 

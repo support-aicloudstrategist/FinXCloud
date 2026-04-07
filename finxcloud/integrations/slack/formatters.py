@@ -17,6 +17,9 @@ _STATUS_EMOJI = {
     "created": ":new:",
     "completed": ":white_check_mark:",
     "blocked": ":no_entry:",
+    "status_changed": ":arrows_counterclockwise:",
+    "agent_run_started": ":rocket:",
+    "agent_run_completed": ":checkered_flag:",
     "approval_requested": ":raised_hand:",
     "approval_resolved": ":thumbsup:",
 }
@@ -25,6 +28,9 @@ _EVENT_TITLES = {
     EventType.TASK_CREATED: "Task Created",
     EventType.TASK_COMPLETED: "Task Completed",
     EventType.TASK_BLOCKED: "Task Blocked",
+    EventType.ISSUE_STATUS_CHANGED: "Issue Status Changed",
+    EventType.AGENT_RUN_STARTED: "Agent Run Started",
+    EventType.AGENT_RUN_COMPLETED: "Agent Run Completed",
     EventType.APPROVAL_REQUESTED: "Approval Requested",
     EventType.APPROVAL_RESOLVED: "Approval Resolved",
 }
@@ -291,6 +297,119 @@ def _format_approval_resolved(
     return blocks, fallback
 
 
+def _format_issue_status_changed(
+    event_type: EventType, data: dict[str, Any]
+) -> tuple[list[dict], str]:
+    identifier = data.get("identifier", "")
+    title = data.get("title", "Untitled")
+    old_status = data.get("old_status", "unknown")
+    new_status = data.get("new_status", "unknown")
+    fallback = f":arrows_counterclockwise: {identifier} status: {old_status} -> {new_status}"
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"{_STATUS_EMOJI['status_changed']} Issue Status Changed",
+            },
+        },
+        {"type": "section", "fields": _task_fields(data)},
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Status:* `{old_status}` :arrow_right: `{new_status}`",
+            },
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"_FinXCloud | {_timestamp()}_"}],
+        },
+    ]
+
+    return blocks, fallback
+
+
+def _format_agent_run_started(
+    event_type: EventType, data: dict[str, Any]
+) -> tuple[list[dict], str]:
+    agent_name = data.get("agent_name", "Unknown")
+    run_id = data.get("id", "")[:8]
+    fallback = f":rocket: Agent run started: {agent_name} (run {run_id})"
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"{_STATUS_EMOJI['agent_run_started']} Agent Run Started"},
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Agent:*\n{agent_name}"},
+                {"type": "mrkdwn", "text": f"*Run:*\n`{run_id}`"},
+            ],
+        },
+    ]
+
+    if data.get("invocationSource"):
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"Source: {data['invocationSource']}"},
+            ],
+        })
+
+    blocks.append({
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": f"_FinXCloud | {_timestamp()}_"}],
+    })
+
+    return blocks, fallback
+
+
+def _format_agent_run_completed(
+    event_type: EventType, data: dict[str, Any]
+) -> tuple[list[dict], str]:
+    agent_name = data.get("agent_name", "Unknown")
+    run_id = data.get("id", "")[:8]
+    status = data.get("status", "completed")
+    fallback = f":checkered_flag: Agent run {status}: {agent_name} (run {run_id})"
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"{_STATUS_EMOJI['agent_run_completed']} Agent Run Completed"},
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Agent:*\n{agent_name}"},
+                {"type": "mrkdwn", "text": f"*Run:*\n`{run_id}`"},
+                {"type": "mrkdwn", "text": f"*Status:*\n{status}"},
+            ],
+        },
+    ]
+
+    if data.get("startedAt") and data.get("finishedAt"):
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"Started: {data['startedAt']} | Finished: {data['finishedAt']}",
+                },
+            ],
+        })
+
+    blocks.append({
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": f"_FinXCloud | {_timestamp()}_"}],
+    })
+
+    return blocks, fallback
+
+
 def _format_generic(event_type: EventType, data: dict[str, Any]) -> tuple[list[dict], str]:
     """Fallback formatter for unknown event types."""
     title = _EVENT_TITLES.get(event_type, event_type.value.replace("_", " ").title())
@@ -318,6 +437,9 @@ _FORMATTERS = {
     EventType.TASK_CREATED: _format_task_created,
     EventType.TASK_COMPLETED: _format_task_completed,
     EventType.TASK_BLOCKED: _format_task_blocked,
+    EventType.ISSUE_STATUS_CHANGED: _format_issue_status_changed,
+    EventType.AGENT_RUN_STARTED: _format_agent_run_started,
+    EventType.AGENT_RUN_COMPLETED: _format_agent_run_completed,
     EventType.APPROVAL_REQUESTED: _format_approval_requested,
     EventType.APPROVAL_RESOLVED: _format_approval_resolved,
 }
