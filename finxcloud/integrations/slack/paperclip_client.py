@@ -129,6 +129,40 @@ class PaperclipClient(TaskStore):
         """Add a comment to an issue."""
         return self._api_call("POST", f"/api/issues/{issue_id}/comments", {"body": body})
 
+    def get_agent(self, name_or_id: str) -> dict[str, Any] | None:
+        """Look up an agent by name, urlKey, or UUID."""
+        agents = self.list_agents()
+        if not isinstance(agents, list):
+            return None
+        for agent in agents:
+            if agent.get("id") == name_or_id:
+                return agent
+            if agent.get("urlKey", "").lower() == name_or_id.lower():
+                return agent
+            if agent.get("name", "").lower() == name_or_id.lower():
+                return agent
+        return None
+
+    def get_agent_runs(self, agent_id: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Get recent heartbeat runs for an agent."""
+        data = self._api_call(
+            "GET",
+            f"/api/companies/{self.company_id}/agents/{agent_id}/runs?limit={limit}",
+        )
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return data.get("items", data.get("data", []))
+        return []
+
+    def wake_agent(self, agent_id: str) -> dict[str, Any]:
+        """Trigger a heartbeat run for an agent."""
+        return self._api_call(
+            "POST",
+            f"/api/companies/{self.company_id}/agents/{agent_id}/wake",
+            {},
+        )
+
     # ---- HTTP plumbing ------------------------------------------------------
 
     def _api_call(

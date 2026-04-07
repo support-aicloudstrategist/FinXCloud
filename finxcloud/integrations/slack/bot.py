@@ -18,6 +18,7 @@ from finxcloud.integrations.slack.client import SlackClient
 from finxcloud.integrations.slack.commands import (
     CommandResult,
     TaskStore,
+    handle_agent_command,
     handle_task_command,
     parse_command,
 )
@@ -104,6 +105,37 @@ class SlackBot:
             user_id=user_id,
             user_name=user_name,
             task_store=self.task_store,
+        )
+
+        response_type = "ephemeral" if result.ephemeral else "in_channel"
+        return {
+            "response_type": response_type,
+            "text": result.text,
+            "blocks": result.blocks,
+        }
+
+    def handle_agent_slash_command(self, form_data: dict[str, str]) -> dict[str, Any]:
+        """Process a Slack /agent slash command payload.
+
+        Args:
+            form_data: Parsed form body from Slack (command, text, user_id, etc.).
+
+        Returns:
+            Slack response dict (response_type + blocks/text).
+        """
+        text = form_data.get("text", "")
+        user_id = form_data.get("user_id", "")
+        user_name = form_data.get("user_name", "unknown")
+
+        log.info("Agent command from %s: /agent %s", user_name, text)
+
+        action, args = parse_command(text)
+        result = handle_agent_command(
+            action=action,
+            args=args,
+            user_id=user_id,
+            user_name=user_name,
+            paperclip_client=self.task_store,
         )
 
         response_type = "ephemeral" if result.ephemeral else "in_channel"

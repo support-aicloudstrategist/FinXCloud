@@ -1,10 +1,17 @@
-"""Slack slash command parser and executor for task management.
+"""Slack slash command parser and executor for task and agent management.
 
 Handles /task slash commands:
     /task create <title>       — Create a new task
     /task status [identifier]  — Show task status or list in-progress tasks
     /task assign <id> <agent>  — Reassign a task to another agent
     /task help                 — Show available commands
+
+Handles /agent slash commands:
+    /agent list                — List all company agents with status
+    /agent status <name>       — Show agent details, current task, budget
+    /agent wake <name>         — Trigger a heartbeat run
+    /agent runs <name>         — Show recent runs
+    /agent help                — Show available agent commands
 """
 
 from __future__ import annotations
@@ -343,3 +350,314 @@ def _error_blocks(title: str, detail: str) -> list[dict[str, Any]]:
             "text": {"type": "mrkdwn", "text": f":warning: *{title}*\n{detail}"},
         },
     ]
+
+
+# ---------------------------------------------------------------------------
+# Agent commands (/agent list, /agent status, /agent wake, /agent runs)
+# ---------------------------------------------------------------------------
+
+def handle_agent_command(
+    action: str,
+    args: list[str],
+    user_id: str,
+    user_name: str,
+    paperclip_client: Any | None = None,
+) -> CommandResult:
+    """Route a parsed /agent command to the appropriate handler."""
+    if paperclip_client is None:
+        return CommandResult(
+            text="Agent commands require a Paperclip connection.",
+            blocks=_error_blocks(
+                "Not configured",
+                "Paperclip API is not configured. Agent commands are unavailable.",
+            ),
+        )
+
+    handlers = {
+        "list": _handle_agent_list,
+        "status": _handle_agent_status,
+        "wake": _handle_agent_wake,
+        "runs": _handle_agent_runs,
+        "help": _handle_agent_help,
+    }
+
+    handler = handlers.get(action)
+    if not handler:
+        return CommandResult(
+            text=f"Unknown agent command: `{action}`. Try `/agent help`.",
+            blocks=_error_blocks(
+                f"Unknown command: `{action}`",
+                "Try `/agent help` for available commands.",
+            ),
+        )
+
+    return handler(args, user_id, user_name, paperclip_client)
+
+
+def _handle_agent_list(
+    args: list[str], user_id: str, user_name: str, client: Any
+) -> CommandResult:
+    """List all company agents with status."""
+    agents = client.list_agents()
+    if not agents:
+        return CommandResult(
+            text="No agents found.",
+            blocks=[{
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": ":robot_face: *No agents found in this company.*"},
+            }],
+            ephemeral=True,
+        )
+
+    status_emoji = {
+        "running": ":large_green_circle:",
+        "idle": ":white_circle:",
+        "paused": ":double_vertical_bar:",
+    }
+
+    lines = []
+    for a in agents:
+        name = a.get("name", "Unknown")
+        s = a.get("status", "idle")
+        emoji = status_emoji.get(s, ":grey_question:")
+        role = a.get("role", "")
+        lines.append(f"{emoji} *{name}* — {role} ({s})")
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": ":robot_face: Company Agents"},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "\n".join(lines[:20])},
+        },
+    ]
+
+    if len(agents) > 20:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"_Showing 20 of {len(agents)} agents_"}],
+        })
+
+    return CommandResult(
+        text=f"{len(agents)} agents",
+        blocks=blocks,
+    )
+
+
+def _handle_agent_status(
+    args: list[str], user_id: str, user_name: str, client: Any
+) -> CommandResult:
+    """Show detailed status for a specific agent."""
+    if not args:
+        return CommandResult(
+            text="Usage: `/agent status <name>`",
+            blocks=_error_blocks("Missing agent name", "Usage: `/agent status <name>`"),
+            ephemeral=True,
+        )
+
+    name = args[0]
+    agent = client.get_agent(name)
+    if not agent:
+        return CommandResult(
+            text=f"Agent `{name}` not found.",
+            blocks=_error_blocks(f"Agent `{name}` not found", "Check the name and try again. Use `/agent list` to see all agents."),
+            ephemeral=True,
+        )
+
+    status_emoji = {
+        "running": ":large_green_circle:",
+        "idle": ":white_circle:",
+        "paused": ":double_vertical_bar:",
+    }
+
+    a_status = agent.get("status", "idle")
+    emoji = status_emoji.get(a_status, ":grey_question:")
+    a_name = agent.get("name", "Unknown")
+    a_role = agent.get("role", "")
+    a_title = agent.get("title", "") or a_role
+    budget_monthly = agent.get("budgetMonthlyCents", 0)
+    spent_monthly = agent.get("spentMonthlyCents", 0)
+    pause_reason = agent.get("pauseReason") or "—"
+    last_heartbeat = agent.get("lastHeartbeatAt") or "Never"
+
+    budget_str = f"${budget_monthly / 100:.2f}" if budget_monthly else "Unlimited"
+    spent_str = f"${spent_monthly / 100:.2f}"
+
+    fields = [
+        {"type": "mrkdwn", "text": f"*Name:*\n{a_name}"},
+        {"type": "mrkdwn", "text": f"*Status:*\n{emoji} {a_status}"},
+        {"type": "mrkdwn", "text": f"*Role:*\n{a_title}"},
+        {"type": "mrkdwn", "text": f"*Budget:*\n{spent_str} / {budget_str}"},
+    ]
+
+    if a_status == "paused":
+        fields.append({"type": "mrkdwn", "text": f"*Pause reason:*\n{pause_reason}"})
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"{emoji} {a_name}"},
+        },
+        {
+            "type": "section",
+            "fields": fields,
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"Last heartbeat: {last_heartbeat}"}],
+        },
+    ]
+
+    return CommandResult(
+        text=f"{a_name}: {a_status}",
+        blocks=blocks,
+    )
+
+
+def _handle_agent_wake(
+    args: list[str], user_id: str, user_name: str, client: Any
+) -> CommandResult:
+    """Trigger a heartbeat run for an agent."""
+    if not args:
+        return CommandResult(
+            text="Usage: `/agent wake <name>`",
+            blocks=_error_blocks("Missing agent name", "Usage: `/agent wake <name>`"),
+            ephemeral=True,
+        )
+
+    name = args[0]
+    agent = client.get_agent(name)
+    if not agent:
+        return CommandResult(
+            text=f"Agent `{name}` not found.",
+            blocks=_error_blocks(f"Agent `{name}` not found", "Use `/agent list` to see all agents."),
+            ephemeral=True,
+        )
+
+    agent_id = agent["id"]
+    a_name = agent.get("name", name)
+    result = client.wake_agent(agent_id)
+
+    if not result or result.get("error"):
+        err = result.get("error", "Unknown error") if result else "No response"
+        return CommandResult(
+            text=f"Failed to wake {a_name}: {err}",
+            blocks=_error_blocks(f"Failed to wake {a_name}", str(err)),
+        )
+
+    run_id = result.get("runId") or result.get("id") or "—"
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f":zap: *Heartbeat triggered for {a_name}*\nRun ID: `{run_id}`",
+            },
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"Triggered by <@{user_id}>"}],
+        },
+    ]
+
+    return CommandResult(
+        text=f"Heartbeat triggered for {a_name} (run {run_id})",
+        blocks=blocks,
+    )
+
+
+def _handle_agent_runs(
+    args: list[str], user_id: str, user_name: str, client: Any
+) -> CommandResult:
+    """Show recent runs for an agent."""
+    if not args:
+        return CommandResult(
+            text="Usage: `/agent runs <name>`",
+            blocks=_error_blocks("Missing agent name", "Usage: `/agent runs <name>`"),
+            ephemeral=True,
+        )
+
+    name = args[0]
+    agent = client.get_agent(name)
+    if not agent:
+        return CommandResult(
+            text=f"Agent `{name}` not found.",
+            blocks=_error_blocks(f"Agent `{name}` not found", "Use `/agent list` to see all agents."),
+            ephemeral=True,
+        )
+
+    agent_id = agent["id"]
+    a_name = agent.get("name", name)
+    runs = client.get_agent_runs(agent_id, limit=5)
+
+    if not runs:
+        return CommandResult(
+            text=f"No recent runs for {a_name}.",
+            blocks=[{
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f":clipboard: *No recent runs for {a_name}.*"},
+            }],
+            ephemeral=True,
+        )
+
+    status_emoji = {
+        "running": ":large_green_circle:",
+        "completed": ":white_check_mark:",
+        "queued": ":hourglass_flowing_sand:",
+        "failed": ":x:",
+        "cancelled": ":no_entry:",
+    }
+
+    lines = []
+    for r in runs[:5]:
+        r_id = r.get("id", "—")[:8]
+        r_status = r.get("status", "unknown")
+        emoji = status_emoji.get(r_status, ":grey_question:")
+        started = r.get("startedAt") or "—"
+        source = r.get("invocationSource") or "—"
+        lines.append(f"{emoji} `{r_id}` — {r_status} | {source} | {started}")
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f":gear: Recent Runs — {a_name}"},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "\n".join(lines)},
+        },
+    ]
+
+    return CommandResult(
+        text=f"{len(runs)} recent runs for {a_name}",
+        blocks=blocks,
+    )
+
+
+def _handle_agent_help(
+    args: list[str], user_id: str, user_name: str, client: Any
+) -> CommandResult:
+    """Show available agent commands."""
+    help_text = (
+        "*Available agent commands:*\n"
+        "- `/agent list` — List all company agents with status\n"
+        "- `/agent status <name>` — Show agent details, current task, budget\n"
+        "- `/agent wake <name>` — Trigger a heartbeat run\n"
+        "- `/agent runs <name>` — Show recent runs for an agent\n"
+        "- `/agent help` — Show this help message"
+    )
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": ":robot_face: Agent Bot Commands"},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": help_text},
+        },
+    ]
+
+    return CommandResult(text=help_text, blocks=blocks, ephemeral=True)

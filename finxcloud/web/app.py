@@ -1013,6 +1013,36 @@ async def slack_slash_command(request: Request):
     return JSONResponse(content=result)
 
 
+@app.post("/api/slack/agent-commands")
+async def slack_agent_command(request: Request):
+    """Handle incoming Slack /agent slash commands.
+
+    Routes /agent list, /agent status, /agent wake, /agent runs
+    to the Paperclip API via the PaperclipClient.
+    """
+    from finxcloud.integrations.slack.bot import SlackBot, parse_slash_form_body
+    from finxcloud.integrations.slack.paperclip_client import PaperclipClient
+
+    body = await request.body()
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
+
+    client = PaperclipClient()
+    if not client.is_configured:
+        return JSONResponse(content={
+            "response_type": "ephemeral",
+            "text": "Paperclip API is not configured. Agent commands are unavailable.",
+        })
+
+    bot = SlackBot(task_store=client)
+    if not bot.verify_request(body, timestamp, signature):
+        raise HTTPException(status_code=401, detail="Invalid Slack signature")
+
+    form_data = parse_slash_form_body(body)
+    result = bot.handle_agent_slash_command(form_data)
+    return JSONResponse(content=result)
+
+
 @app.post("/api/slack/events")
 async def slack_events(request: Request):
     """Handle Slack Events API callbacks (messages, mentions, url_verification).
