@@ -93,8 +93,11 @@ def _format_task_created(event_type: EventType, data: dict[str, Any]) -> tuple[l
 
 
 def _format_task_completed(event_type: EventType, data: dict[str, Any]) -> tuple[list[dict], str]:
-    title = data.get("title", "Untitled")
-    identifier = data.get("identifier", "")
+    from finxcloud.integrations.slack.completion_summary import enrich_completion_data
+
+    enriched = enrich_completion_data(data)
+    title = enriched.get("title", "Untitled")
+    identifier = enriched.get("identifier", "")
     fallback = f":white_check_mark: Task completed: {identifier} — {title}"
 
     blocks: list[dict] = [
@@ -102,21 +105,67 @@ def _format_task_completed(event_type: EventType, data: dict[str, Any]) -> tuple
             "type": "header",
             "text": {"type": "plain_text", "text": f"{_STATUS_EMOJI['completed']} Task Completed"},
         },
-        {"type": "section", "fields": _task_fields(data)},
+        {"type": "section", "fields": _task_fields(enriched)},
     ]
 
-    if data.get("summary"):
-        blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Summary:*\n{data['summary']}"},
-        })
-
-    if data.get("duration"):
+    # Duration bar
+    if enriched.get("duration"):
         blocks.append({
             "type": "context",
             "elements": [
-                {"type": "mrkdwn", "text": f":clock1: Completed in {data['duration']}"},
+                {"type": "mrkdwn", "text": f":clock1: Completed in *{enriched['duration']}*"},
             ],
+        })
+
+    # Description snippet
+    if enriched.get("description_snippet"):
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Description:*\n{enriched['description_snippet']}",
+            },
+        })
+
+    # Auto-generated or provided summary
+    if enriched.get("summary"):
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Summary:*\n{enriched['summary']}"},
+        })
+
+    # Comment thread (expandable section)
+    if enriched.get("comments_summary"):
+        blocks.append({"type": "divider"})
+        comments_header = f":speech_balloon: *Comment Thread* ({enriched.get('comments_count', 0)} comments)"
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": comments_header},
+        })
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": enriched["comments_summary"][:3000],
+            },
+        })
+
+    # Linked commits
+    if enriched.get("commits_summary"):
+        blocks.append({"type": "divider"})
+        commits_header = f":git: *Linked Commits* ({enriched.get('commits_count', 0)} commits)"
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": commits_header},
+        })
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": enriched["commits_summary"][:3000],
+            },
         })
 
     blocks.append({

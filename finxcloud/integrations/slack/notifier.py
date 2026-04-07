@@ -61,12 +61,18 @@ class SlackNotifier:
                  "all events" if not event_types else [e.value for e in event_types])
 
     def handle_event(self, event: Event) -> None:
-        """Handle an event by formatting and sending it to Slack."""
+        """Handle an event by formatting and sending it to Slack.
+
+        For TASK_COMPLETED events, also sends a DM to the task creator
+        if a creator_channel is provided in the event data.
+        """
         if not self.client.is_configured:
             log.debug("Slack not configured — skipping event %s", event.type.value)
             return
 
         blocks, fallback_text = format_event(event.type, event.data)
+
+        # Post to the main channel
         result = self.client.post_message(blocks=blocks, text=fallback_text)
 
         if result.get("ok"):
@@ -77,6 +83,25 @@ class SlackNotifier:
                 event.type.value,
                 result.get("error", "unknown"),
             )
+
+        # For completions, also DM the task creator if channel is provided
+        if (
+            event.type == EventType.TASK_COMPLETED
+            and event.data.get("creator_channel")
+        ):
+            dm_result = self.client.post_message(
+                blocks=blocks,
+                text=fallback_text,
+                channel=event.data["creator_channel"],
+            )
+            if dm_result.get("ok"):
+                log.info("Completion DM sent to creator channel %s", event.data["creator_channel"])
+            else:
+                log.debug(
+                    "Completion DM failed for %s: %s",
+                    event.data["creator_channel"],
+                    dm_result.get("error", "unknown"),
+                )
 
     def send_direct(
         self,
