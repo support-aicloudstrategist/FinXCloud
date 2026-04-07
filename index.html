@@ -40,6 +40,20 @@
 
   .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 
+  /* Nav tabs */
+  .nav-tabs {
+    display: flex; gap: 0; margin-bottom: 1.5rem; border-bottom: 2px solid var(--gray-200);
+  }
+  .nav-tab {
+    padding: 0.6rem 1.25rem; cursor: pointer; font-size: 0.9rem; font-weight: 600;
+    color: var(--gray-500); border-bottom: 2px solid transparent; margin-bottom: -2px;
+    background: none; border-top: none; border-left: none; border-right: none;
+  }
+  .nav-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .nav-tab:hover { color: var(--gray-700); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
   /* Scan Form */
   .scan-panel {
     background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
@@ -54,12 +68,12 @@
     display: block; font-size: 0.8rem; font-weight: 600;
     color: var(--gray-700); margin-bottom: 0.25rem;
   }
-  .form-group input, .form-group select {
+  .form-group input, .form-group select, .form-group textarea {
     width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--gray-300);
     border-radius: 6px; font-size: 0.9rem; outline: none;
     transition: border-color 0.2s;
   }
-  .form-group input:focus { border-color: var(--primary); }
+  .form-group input:focus, .form-group select:focus { border-color: var(--primary); }
   .checkbox-group {
     display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;
   }
@@ -74,6 +88,15 @@
   .btn-primary { background: var(--primary); color: #fff; }
   .btn-primary:hover { background: var(--primary-hover); }
   .btn-primary:disabled { background: var(--gray-300); cursor: not-allowed; }
+  .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.8rem; }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-danger:hover { background: #b91c1c; }
+  .btn-green { background: var(--green); color: #fff; }
+  .btn-green:hover { background: #15803d; }
+  .btn-outline {
+    background: #fff; color: var(--primary); border: 1px solid var(--primary);
+  }
+  .btn-outline:hover { background: #eff6ff; }
 
   /* Progress */
   .progress-bar {
@@ -93,6 +116,11 @@
     background: var(--red-bg); border-radius: 6px; color: var(--red); font-size: 0.9rem;
   }
   .error-msg.show { display: block; }
+  .success-msg {
+    display: none; margin-top: 0.75rem; padding: 0.75rem 1rem;
+    background: var(--green-bg); border-radius: 6px; color: var(--green); font-size: 0.9rem;
+  }
+  .success-msg.show { display: block; }
 
   /* Dashboard (hidden until results) */
   #dashboard { display: none; }
@@ -193,6 +221,41 @@
   }
   .user-bar .btn-logout:hover { background: rgba(255,255,255,0.25); }
 
+  /* Account cards */
+  .account-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1rem; margin-bottom: 1.5rem;
+  }
+  .account-card {
+    background: #fff; border-radius: var(--radius); padding: 1.25rem;
+    box-shadow: var(--shadow); cursor: pointer; transition: box-shadow 0.2s;
+  }
+  .account-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+  .account-card .acct-name { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.25rem; }
+  .account-card .acct-meta { font-size: 0.85rem; color: var(--gray-500); }
+  .account-card .acct-actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 500;
+    background: rgba(0,0,0,0.4); align-items: center; justify-content: center;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: #fff; border-radius: var(--radius); padding: 2rem;
+    max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  }
+  .modal h2 { margin-bottom: 1rem; font-size: 1.2rem; }
+  .modal .form-group { margin-bottom: 0.75rem; }
+  .modal-actions { display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end; }
+
+  /* Email panel */
+  .email-panel {
+    background: #fff; border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 1.5rem; margin-bottom: 1.5rem;
+  }
+
   @media (max-width: 640px) {
     .container { padding: 0.75rem; }
     .chart-grid { grid-template-columns: 1fr; }
@@ -221,38 +284,37 @@
   </div>
 </div>
 
-<div class="header">
-  <h1>FinXCloud Dashboard
-    <span class="user-bar" id="userBar" style="display:none;">
-      <span class="username" id="userDisplay"></span>
-      <button class="btn-logout" id="logoutBtn">Logout</button>
-    </span>
-  </h1>
-  <p>AWS Cost Optimization Tool</p>
-</div>
-
-<div class="container">
-
-  <!-- Scan Form -->
-  <div class="scan-panel">
-    <h2>Run a New Scan</h2>
-    <form id="scanForm">
-      <div class="form-grid">
+<!-- Add Account Modal -->
+<div class="modal-overlay" id="addAccountModal">
+  <div class="modal">
+    <h2 id="accountModalTitle">Add Cloud Account</h2>
+    <form id="accountForm">
+      <input type="hidden" id="editAccountId">
+      <div class="form-group">
+        <label for="acctName">Account Name *</label>
+        <input type="text" id="acctName" required placeholder="e.g. Production">
+      </div>
+      <div class="form-group">
+        <label for="acctProvider">Cloud Provider *</label>
+        <select id="acctProvider" onchange="toggleProviderFields()">
+          <option value="aws" selected>Amazon Web Services (AWS)</option>
+          <option value="azure">Microsoft Azure</option>
+          <option value="gcp">Google Cloud Platform (GCP)</option>
+        </select>
+      </div>
+      <!-- AWS Fields -->
+      <div id="awsFields">
         <div class="form-group">
-          <label for="accessKey">AWS Access Key ID *</label>
-          <input type="text" id="accessKey" required placeholder="AKIA...">
+          <label for="acctAccessKey">AWS Access Key ID *</label>
+          <input type="text" id="acctAccessKey" placeholder="AKIA...">
         </div>
         <div class="form-group">
-          <label for="secretKey">AWS Secret Access Key *</label>
-          <input type="password" id="secretKey" required placeholder="Secret key">
+          <label for="acctSecretKey">AWS Secret Access Key *</label>
+          <input type="password" id="acctSecretKey" placeholder="Secret key">
         </div>
         <div class="form-group">
-          <label for="sessionToken">Session Token (optional)</label>
-          <input type="text" id="sessionToken" placeholder="Optional">
-        </div>
-        <div class="form-group">
-          <label for="region">Default Region</label>
-          <select id="region">
+          <label for="acctRegion">Default Region</label>
+          <select id="acctRegion">
             <option value="us-east-1" selected>us-east-1</option>
             <option value="us-east-2">us-east-2</option>
             <option value="us-west-1">us-west-1</option>
@@ -265,115 +327,586 @@
           </select>
         </div>
         <div class="form-group">
-          <label for="regions">Regions to Scan (comma-separated, blank=all)</label>
-          <input type="text" id="regions" placeholder="e.g. us-east-1,eu-west-1">
+          <label for="acctRoleArn">IAM Role ARN (optional, for cross-account)</label>
+          <input type="text" id="acctRoleArn" placeholder="arn:aws:iam::123456789012:role/RoleName">
+        </div>
+        <div class="checkbox-group">
+          <input type="checkbox" id="acctOrgScan">
+          <label for="acctOrgScan">Scan all Organization accounts</label>
+        </div>
+      </div>
+      <!-- Azure Fields -->
+      <div id="azureFields" style="display:none;">
+        <div class="form-group">
+          <label for="acctAzureSubscriptionId">Subscription ID *</label>
+          <input type="text" id="acctAzureSubscriptionId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
         </div>
         <div class="form-group">
-          <label for="days">Lookback Period (days)</label>
-          <input type="number" id="days" value="30" min="1" max="365">
+          <label for="acctAzureTenantId">Tenant ID</label>
+          <input type="text" id="acctAzureTenantId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+        </div>
+        <div class="form-group">
+          <label for="acctAzureClientId">Client ID (App Registration)</label>
+          <input type="text" id="acctAzureClientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+        </div>
+        <div class="form-group">
+          <label for="acctAzureClientSecret">Client Secret</label>
+          <input type="password" id="acctAzureClientSecret" placeholder="Service Principal secret">
+        </div>
+        <div class="form-group">
+          <label for="acctAzureRegion">Default Region</label>
+          <select id="acctAzureRegion">
+            <option value="eastus" selected>East US</option>
+            <option value="westus2">West US 2</option>
+            <option value="westeurope">West Europe</option>
+            <option value="northeurope">North Europe</option>
+            <option value="centralindia">Central India</option>
+            <option value="southeastasia">Southeast Asia</option>
+          </select>
         </div>
       </div>
-      <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;">
-        <div class="checkbox-group">
-          <input type="checkbox" id="orgScan">
-          <label for="orgScan">Scan all Organization accounts</label>
+      <!-- GCP Fields -->
+      <div id="gcpFields" style="display:none;">
+        <div class="form-group">
+          <label for="acctGcpProjectId">Project ID *</label>
+          <input type="text" id="acctGcpProjectId" placeholder="my-project-123">
         </div>
-        <div class="checkbox-group">
-          <input type="checkbox" id="skipUtil">
-          <label for="skipUtil">Skip utilization checks (faster)</label>
+        <div class="form-group">
+          <label for="acctGcpServiceAccountJson">Service Account JSON Key</label>
+          <textarea id="acctGcpServiceAccountJson" rows="4" placeholder='Paste service account JSON key here...' style="font-family:monospace;font-size:0.85rem;"></textarea>
         </div>
-        <button type="submit" class="btn btn-primary" id="scanBtn">Start Scan</button>
+        <div class="form-group">
+          <label for="acctGcpRegion">Default Region</label>
+          <select id="acctGcpRegion">
+            <option value="us-central1" selected>us-central1</option>
+            <option value="us-east1">us-east1</option>
+            <option value="us-west1">us-west1</option>
+            <option value="europe-west1">europe-west1</option>
+            <option value="asia-south1">asia-south1</option>
+            <option value="asia-southeast1">asia-southeast1</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="closeAccountModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="saveAccountBtn">Save Account</button>
       </div>
     </form>
-    <div class="progress-bar" id="progressBar">
-      <div class="spinner"></div>
-      <span id="progressText">Initializing...</span>
-    </div>
-    <div class="error-msg" id="errorMsg"></div>
+  </div>
+</div>
+
+<!-- Email Modal -->
+<div class="modal-overlay" id="emailModal">
+  <div class="modal">
+    <h2>Send Report via Email</h2>
+    <form id="emailForm">
+      <div class="form-group">
+        <label for="emailTo">Recipient Email(s) * (comma-separated)</label>
+        <input type="text" id="emailTo" required placeholder="user@example.com">
+      </div>
+      <div class="form-group">
+        <label for="emailSubject">Subject</label>
+        <input type="text" id="emailSubject" value="FinXCloud Cost Optimization Report">
+      </div>
+      <div class="form-group">
+        <label for="emailMethod">Send Method</label>
+        <select id="emailMethod">
+          <option value="ses">AWS SES (uses scan account credentials)</option>
+          <option value="smtp">SMTP (server-configured)</option>
+        </select>
+      </div>
+      <div id="sesFields">
+        <div class="form-group">
+          <label for="emailFrom">From Address (SES verified)</label>
+          <input type="text" id="emailFrom" placeholder="noreply@yourdomain.com">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="closeEmailModal()">Cancel</button>
+        <button type="submit" class="btn btn-green" id="sendEmailBtn">Send Report</button>
+      </div>
+    </form>
+    <div class="success-msg" id="emailSuccess"></div>
+    <div class="error-msg" id="emailError"></div>
+  </div>
+</div>
+
+<div class="header">
+  <h1>FinXCloud Dashboard
+    <span class="user-bar" id="userBar" style="display:none;">
+      <span class="username" id="userDisplay"></span>
+      <button class="btn-logout" id="logoutBtn">Logout</button>
+    </span>
+  </h1>
+  <p>Multi-Cloud Cost Optimization Tool (AWS | Azure | GCP)</p>
+</div>
+
+<div class="container">
+
+  <!-- Navigation Tabs -->
+  <div class="nav-tabs" id="navTabs">
+    <button class="nav-tab active" data-tab="accounts">Accounts</button>
+    <button class="nav-tab" data-tab="scan">New Scan</button>
+    <button class="nav-tab" data-tab="results" id="resultsTab" style="display:none;">Dashboard</button>
+    <button class="nav-tab" data-tab="budgets">Budgets</button>
+    <button class="nav-tab" data-tab="schedules">Schedules</button>
+    <button class="nav-tab" data-tab="notifications">Notifications</button>
   </div>
 
-  <!-- Dashboard -->
-  <div id="dashboard">
+  <!-- Tab: Accounts -->
+  <div class="tab-content active" id="tab-accounts">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+      <h2 style="font-size:1.1rem;color:var(--gray-700);">Cloud Accounts</h2>
+      <button class="btn btn-primary btn-sm" onclick="openAddAccountModal()">+ Add Account</button>
+    </div>
+    <div class="account-grid" id="accountGrid">
+      <p style="color:var(--gray-500);grid-column:1/-1;text-align:center;padding:2rem;">
+        No accounts yet. Click "Add Account" to get started.
+      </p>
+    </div>
+  </div>
 
-    <!-- Metric Cards -->
-    <div class="metrics">
-      <div class="card">
-        <div class="label">Total Resources</div>
-        <div class="value" id="metricResources">0</div>
+  <!-- Tab: New Scan -->
+  <div class="tab-content" id="tab-scan">
+    <div class="scan-panel">
+      <h2>Run a New Scan</h2>
+      <div style="margin-bottom:1rem;">
+        <label style="font-size:0.8rem;font-weight:600;color:var(--gray-700);">Scan from saved account</label>
+        <select id="scanAccountSelect" style="width:100%;padding:0.5rem 0.75rem;border:1px solid var(--gray-300);border-radius:6px;font-size:0.9rem;margin-top:0.25rem;">
+          <option value="">-- Enter credentials manually --</option>
+        </select>
       </div>
-      <div class="card">
-        <div class="label">30-Day Cost</div>
-        <div class="value cost" id="metricCost">$0.00</div>
+      <form id="scanForm">
+        <div class="form-grid" id="manualCredFields">
+          <div class="form-group">
+            <label for="scanProvider">Cloud Provider</label>
+            <select id="scanProvider" onchange="toggleScanProviderFields()">
+              <option value="aws" selected>Amazon Web Services (AWS)</option>
+              <option value="azure">Microsoft Azure</option>
+              <option value="gcp">Google Cloud Platform (GCP)</option>
+            </select>
+          </div>
+          <!-- AWS Scan Fields -->
+          <div id="scanAwsFields" style="display:contents;">
+            <div class="form-group">
+              <label for="accessKey">AWS Access Key ID *</label>
+              <input type="text" id="accessKey" placeholder="AKIA...">
+            </div>
+            <div class="form-group">
+              <label for="secretKey">AWS Secret Access Key *</label>
+              <input type="password" id="secretKey" placeholder="Secret key">
+            </div>
+            <div class="form-group">
+              <label for="sessionToken">Session Token (optional)</label>
+              <input type="text" id="sessionToken" placeholder="Optional">
+            </div>
+            <div class="form-group">
+              <label for="roleArn">IAM Role ARN (optional)</label>
+              <input type="text" id="roleArn" placeholder="arn:aws:iam::123456789012:role/...">
+            </div>
+            <div class="form-group">
+              <label for="region">Default Region</label>
+              <select id="region">
+                <option value="us-east-1" selected>us-east-1</option>
+                <option value="us-east-2">us-east-2</option>
+                <option value="us-west-1">us-west-1</option>
+                <option value="us-west-2">us-west-2</option>
+                <option value="eu-west-1">eu-west-1</option>
+                <option value="eu-central-1">eu-central-1</option>
+                <option value="ap-south-1">ap-south-1</option>
+                <option value="ap-southeast-1">ap-southeast-1</option>
+                <option value="ap-northeast-1">ap-northeast-1</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="regions">Regions to Scan (comma-separated, blank=all)</label>
+              <input type="text" id="regions" placeholder="e.g. us-east-1,eu-west-1">
+            </div>
+          </div>
+          <!-- Azure Scan Fields -->
+          <div id="scanAzureFields" style="display:none;">
+            <div class="form-group">
+              <label for="scanAzureSubscriptionId">Subscription ID *</label>
+              <input type="text" id="scanAzureSubscriptionId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+            </div>
+            <div class="form-group">
+              <label for="scanAzureTenantId">Tenant ID</label>
+              <input type="text" id="scanAzureTenantId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+            </div>
+            <div class="form-group">
+              <label for="scanAzureClientId">Client ID</label>
+              <input type="text" id="scanAzureClientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+            </div>
+            <div class="form-group">
+              <label for="scanAzureClientSecret">Client Secret</label>
+              <input type="password" id="scanAzureClientSecret" placeholder="Service Principal secret">
+            </div>
+            <div class="form-group">
+              <label for="scanAzureRegion">Default Region</label>
+              <select id="scanAzureRegion">
+                <option value="eastus" selected>East US</option>
+                <option value="westus2">West US 2</option>
+                <option value="westeurope">West Europe</option>
+                <option value="northeurope">North Europe</option>
+                <option value="centralindia">Central India</option>
+                <option value="southeastasia">Southeast Asia</option>
+              </select>
+            </div>
+          </div>
+          <!-- GCP Scan Fields -->
+          <div id="scanGcpFields" style="display:none;">
+            <div class="form-group">
+              <label for="scanGcpProjectId">Project ID *</label>
+              <input type="text" id="scanGcpProjectId" placeholder="my-project-123">
+            </div>
+            <div class="form-group">
+              <label for="scanGcpServiceAccountJson">Service Account JSON Key</label>
+              <textarea id="scanGcpServiceAccountJson" rows="3" placeholder='Paste service account JSON key...' style="font-family:monospace;font-size:0.85rem;width:100%;padding:0.5rem 0.75rem;border:1px solid var(--gray-300);border-radius:6px;"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="scanGcpRegion">Default Region</label>
+              <select id="scanGcpRegion">
+                <option value="us-central1" selected>us-central1</option>
+                <option value="us-east1">us-east1</option>
+                <option value="us-west1">us-west1</option>
+                <option value="europe-west1">europe-west1</option>
+                <option value="asia-south1">asia-south1</option>
+                <option value="asia-southeast1">asia-southeast1</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="days">Lookback Period (days)</label>
+            <input type="number" id="days" value="30" min="1" max="365">
+          </div>
+        </div>
+        <div class="form-grid" style="margin-top:0.5rem;">
+          <div class="form-group">
+            <label for="allocationTags">Cost Allocation Tags (AWS only)</label>
+            <input type="text" id="allocationTags" placeholder="e.g. Team,Project,Environment">
+          </div>
+        </div>
+        <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;">
+          <div class="checkbox-group" id="orgScanGroup">
+            <input type="checkbox" id="orgScan">
+            <label for="orgScan">Scan all Organization accounts</label>
+          </div>
+          <div class="checkbox-group" id="skipUtilGroup">
+            <input type="checkbox" id="skipUtil">
+            <label for="skipUtil">Skip utilization checks (faster)</label>
+          </div>
+          <button type="submit" class="btn btn-primary" id="scanBtn">Start Scan</button>
+        </div>
+      </form>
+      <div class="progress-bar" id="progressBar">
+        <div class="spinner"></div>
+        <span id="progressText">Initializing...</span>
       </div>
-      <div class="card">
-        <div class="label">Potential Savings</div>
-        <div class="value savings" id="metricSavings">$0.00</div>
+      <div class="error-msg" id="errorMsg"></div>
+    </div>
+  </div>
+
+  <!-- Tab: Results / Dashboard -->
+  <div class="tab-content" id="tab-results">
+    <div id="dashboard">
+
+      <!-- Action bar -->
+      <div style="display:flex;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap;">
+        <button class="btn btn-green btn-sm" onclick="openEmailModal()">Send Report</button>
+        <button class="btn btn-primary btn-sm" onclick="downloadPDF()">Download PDF</button>
+        <button class="btn btn-outline btn-sm" onclick="switchTab('scan')">New Scan</button>
       </div>
-      <div class="card">
-        <div class="label">Savings Potential</div>
-        <div class="value savings" id="metricSavingsPct">0%</div>
+
+      <!-- Metric Cards -->
+      <div class="metrics">
+        <div class="card">
+          <div class="label">Total Resources</div>
+          <div class="value" id="metricResources">0</div>
+        </div>
+        <div class="card">
+          <div class="label">30-Day Cost</div>
+          <div class="value cost" id="metricCost">$0.00</div>
+        </div>
+        <div class="card">
+          <div class="label">Potential Savings</div>
+          <div class="value savings" id="metricSavings">$0.00</div>
+        </div>
+        <div class="card">
+          <div class="label">Savings Potential</div>
+          <div class="value savings" id="metricSavingsPct">0%</div>
+        </div>
+        <div class="card">
+          <div class="label">Quick Wins</div>
+          <div class="value" id="metricQuickWins">0</div>
+        </div>
       </div>
-      <div class="card">
-        <div class="label">Quick Wins</div>
-        <div class="value" id="metricQuickWins">0</div>
+
+      <!-- Cost Intelligence: Budget & Anomalies -->
+      <div class="metrics" id="budgetMetrics" style="display:none;">
+        <div class="card">
+          <div class="label">Monthly Budget</div>
+          <div class="value" id="metricBudget">--</div>
+        </div>
+        <div class="card">
+          <div class="label">Actual MTD</div>
+          <div class="value cost" id="metricMTD">$0.00</div>
+        </div>
+        <div class="card">
+          <div class="label">Forecast EOM</div>
+          <div class="value" id="metricForecast" style="color:var(--orange);">$0.00</div>
+        </div>
+        <div class="card">
+          <div class="label">Budget Used</div>
+          <div class="value" id="metricBudgetPct">0%</div>
+        </div>
+        <div class="card">
+          <div class="label">Commitment Coverage</div>
+          <div class="value" id="metricCommitPct" style="color:var(--primary);">0%</div>
+        </div>
+      </div>
+
+      <!-- Anomaly alerts -->
+      <div id="anomalyAlerts" style="display:none;margin-bottom:1.5rem;"></div>
+
+      <!-- Charts -->
+      <div class="chart-grid">
+        <div class="chart-panel">
+          <h3>Cost by Service</h3>
+          <canvas id="chartService"></canvas>
+        </div>
+        <div class="chart-panel">
+          <h3>Cost by Region</h3>
+          <canvas id="chartRegion"></canvas>
+        </div>
+        <div class="chart-panel">
+          <h3>Daily Cost Trend</h3>
+          <canvas id="chartTrend"></canvas>
+        </div>
+        <div class="chart-panel">
+          <h3>Savings by Category</h3>
+          <canvas id="chartSavings"></canvas>
+        </div>
+        <div class="chart-panel">
+          <h3>Monthly Cost Trend</h3>
+          <canvas id="chartMonthlyTrend"></canvas>
+        </div>
+        <div class="chart-panel">
+          <h3>Commitment Coverage</h3>
+          <canvas id="chartCommitments"></canvas>
+        </div>
+      </div>
+
+      <!-- Tag-based Cost Allocation -->
+      <div class="table-panel" id="tagAllocationPanel" style="display:none;">
+        <h3>Cost Allocation by Tags</h3>
+        <div id="tagAllocationContent"></div>
+      </div>
+
+      <!-- Recommendations -->
+      <div class="table-panel">
+        <h3>Top Recommendations</h3>
+        <table>
+          <thead>
+            <tr><th>#</th><th>Category</th><th>Recommendation</th><th>Confidence</th><th>Effort</th><th>Est. Savings/mo</th></tr>
+          </thead>
+          <tbody id="recsBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Commitment Recommendations -->
+      <div class="table-panel" id="commitRecsPanel" style="display:none;">
+        <h3>Commitment Purchase Recommendations</h3>
+        <table>
+          <thead>
+            <tr><th>Type</th><th>Recommendation</th><th>Priority</th><th>Est. Savings</th></tr>
+          </thead>
+          <tbody id="commitRecsBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Resource Inventory -->
+      <div class="table-panel">
+        <h3>Resource Inventory</h3>
+        <table>
+          <thead>
+            <tr><th>Resource Type</th><th>Count</th></tr>
+          </thead>
+          <tbody id="resourcesBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Roadmap -->
+      <div id="roadmapSection">
+        <h3 style="margin-bottom:0.75rem;color:var(--gray-700);">Implementation Roadmap</h3>
+        <div id="roadmapCards"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Tab: Budgets -->
+  <div class="tab-content" id="tab-budgets">
+    <div class="scan-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h2 style="font-size:1.1rem;color:var(--gray-700);">Monthly Budgets</h2>
+      </div>
+      <p style="color:var(--gray-500);font-size:0.85rem;margin-bottom:1rem;">
+        Set monthly cost budgets per account. Budget vs. actual is shown on the dashboard after a scan.
+      </p>
+      <div style="background:#fff;border-radius:var(--radius);padding:1rem;margin-bottom:1rem;">
+        <div class="form-grid" style="grid-template-columns:1fr 1fr auto;align-items:end;">
+          <div class="form-group">
+            <label for="budgetAccountSelect">Account</label>
+            <select id="budgetAccountSelect" style="width:100%;padding:0.5rem 0.75rem;border:1px solid var(--gray-300);border-radius:6px;font-size:0.9rem;">
+              <option value="">-- Select account --</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="budgetAmount">Monthly Budget (USD)</label>
+            <input type="number" id="budgetAmount" min="0" step="0.01" placeholder="e.g. 5000" style="width:100%;padding:0.5rem 0.75rem;border:1px solid var(--gray-300);border-radius:6px;font-size:0.9rem;">
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" onclick="saveBudget()" style="margin-bottom:0.25rem;">Set Budget</button>
+        </div>
+      </div>
+      <div id="budgetList">
+        <p style="color:var(--gray-500);text-align:center;padding:2rem;">Loading budgets...</p>
       </div>
     </div>
+  </div>
 
-    <!-- Charts -->
-    <div class="chart-grid">
-      <div class="chart-panel">
-        <h3>Cost by Service</h3>
-        <canvas id="chartService"></canvas>
+  <!-- Tab: Schedules -->
+  <div class="tab-content" id="tab-schedules">
+    <div class="scan-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h2 style="font-size:1.1rem;color:var(--gray-700);">Resource Schedules</h2>
+        <button class="btn btn-primary btn-sm" onclick="openScheduleModal()">+ Add Schedule</button>
       </div>
-      <div class="chart-panel">
-        <h3>Cost by Region</h3>
-        <canvas id="chartRegion"></canvas>
-      </div>
-      <div class="chart-panel">
-        <h3>Daily Cost Trend</h3>
-        <canvas id="chartTrend"></canvas>
-      </div>
-      <div class="chart-panel">
-        <h3>Savings by Category</h3>
-        <canvas id="chartSavings"></canvas>
+      <p style="color:var(--gray-500);font-size:0.85rem;margin-bottom:1rem;">
+        Configure automatic stop/start schedules for EC2 instances to save costs during non-business hours.
+      </p>
+      <div id="scheduleList">
+        <p style="color:var(--gray-500);text-align:center;padding:2rem;">Loading schedules...</p>
       </div>
     </div>
+  </div>
 
-    <!-- Recommendations -->
-    <div class="table-panel">
-      <h3>Top Recommendations</h3>
-      <table>
-        <thead>
-          <tr><th>#</th><th>Category</th><th>Recommendation</th><th>Effort</th><th>Est. Savings/mo</th></tr>
-        </thead>
-        <tbody id="recsBody"></tbody>
-      </table>
+  <!-- Tab: Notifications -->
+  <div class="tab-content" id="tab-notifications">
+    <div class="scan-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h2 style="font-size:1.1rem;color:var(--gray-700);">Webhook Notifications</h2>
+        <button class="btn btn-primary btn-sm" onclick="openWebhookModal()">+ Add Webhook</button>
+      </div>
+      <p style="color:var(--gray-500);font-size:0.85rem;margin-bottom:1rem;">
+        Configure Slack or generic HTTP webhooks to receive alerts on scan completions, cost anomalies, and budget thresholds.
+      </p>
+      <div id="webhookList">
+        <p style="color:var(--gray-500);text-align:center;padding:2rem;">Loading webhooks...</p>
+      </div>
     </div>
+  </div>
 
-    <!-- Resource Inventory -->
-    <div class="table-panel">
-      <h3>Resource Inventory</h3>
-      <table>
-        <thead>
-          <tr><th>Resource Type</th><th>Count</th></tr>
-        </thead>
-        <tbody id="resourcesBody"></tbody>
-      </table>
-    </div>
+</div>
 
-    <!-- Roadmap -->
-    <div id="roadmapSection">
-      <h3 style="margin-bottom:0.75rem;color:var(--gray-700);">Implementation Roadmap</h3>
-      <div id="roadmapCards"></div>
-    </div>
+<!-- Schedule Modal -->
+<div class="modal-overlay" id="scheduleModal">
+  <div class="modal">
+    <h2 id="scheduleModalTitle">Add Schedule</h2>
+    <form id="scheduleForm">
+      <input type="hidden" id="editScheduleId">
+      <div class="form-group">
+        <label for="schedInstanceId">EC2 Instance ID *</label>
+        <input type="text" id="schedInstanceId" required placeholder="i-0abc123def456">
+      </div>
+      <div class="form-group">
+        <label for="schedRegion">Region</label>
+        <select id="schedRegion">
+          <option value="us-east-1" selected>us-east-1</option>
+          <option value="us-east-2">us-east-2</option>
+          <option value="us-west-1">us-west-1</option>
+          <option value="us-west-2">us-west-2</option>
+          <option value="eu-west-1">eu-west-1</option>
+          <option value="eu-central-1">eu-central-1</option>
+          <option value="ap-south-1">ap-south-1</option>
+          <option value="ap-southeast-1">ap-southeast-1</option>
+          <option value="ap-northeast-1">ap-northeast-1</option>
+        </select>
+      </div>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="form-group">
+          <label for="schedStopTime">Stop Time (UTC) *</label>
+          <input type="time" id="schedStopTime" required value="19:00">
+        </div>
+        <div class="form-group">
+          <label for="schedStartTime">Start Time (UTC) *</label>
+          <input type="time" id="schedStartTime" required value="08:00">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Active Days</label>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.25rem;">
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="mon" checked> Mon</label>
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="tue" checked> Tue</label>
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="wed" checked> Wed</label>
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="thu" checked> Thu</label>
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="fri" checked> Fri</label>
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="sat"> Sat</label>
+          <label class="checkbox-group"><input type="checkbox" class="sched-day" value="sun"> Sun</label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="closeScheduleModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Schedule</button>
+      </div>
+    </form>
+  </div>
+</div>
 
+<!-- Webhook Modal -->
+<div class="modal-overlay" id="webhookModal">
+  <div class="modal">
+    <h2 id="webhookModalTitle">Add Webhook</h2>
+    <form id="webhookForm">
+      <input type="hidden" id="editWebhookId">
+      <div class="form-group">
+        <label for="whName">Name</label>
+        <input type="text" id="whName" placeholder="e.g. Slack #cloud-costs">
+      </div>
+      <div class="form-group">
+        <label for="whUrl">Webhook URL *</label>
+        <input type="url" id="whUrl" required placeholder="https://hooks.slack.com/services/...">
+      </div>
+      <div class="form-group">
+        <label for="whType">Type</label>
+        <select id="whType">
+          <option value="slack">Slack</option>
+          <option value="generic">Generic HTTP</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Subscribe to Events</label>
+        <div style="display:flex;flex-direction:column;gap:0.4rem;margin-top:0.25rem;">
+          <label class="checkbox-group"><input type="checkbox" class="wh-event" value="scan_complete" checked> Scan Complete</label>
+          <label class="checkbox-group"><input type="checkbox" class="wh-event" value="anomaly_detected" checked> Anomaly Detected</label>
+          <label class="checkbox-group"><input type="checkbox" class="wh-event" value="budget_threshold" checked> Budget Threshold</label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="closeWebhookModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Webhook</button>
+      </div>
+    </form>
   </div>
 </div>
 
 <script>
-// --- Auth ---
+// --- State ---
 let isAuthenticated = false;
+let currentScanId = null;
+let currentAccountId = null;
+let lastScanResult = null;
 
+// --- Auth ---
 async function checkAuth() {
   try {
     const res = await fetch('/api/me');
@@ -397,11 +930,11 @@ function showApp(username) {
   document.getElementById('loginOverlay').classList.add('hidden');
   document.getElementById('userBar').style.display = 'flex';
   document.getElementById('userDisplay').textContent = username;
+  loadAccounts();
 }
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  // Skip API-based login in static/embedded mode
   if (typeof FINXCLOUD_STATIC_AUTH !== 'undefined' && FINXCLOUD_STATIC_AUTH) return;
   const errorEl = document.getElementById('loginError');
   errorEl.classList.remove('show');
@@ -436,11 +969,185 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   showLogin();
 });
 
-// Check auth on load (skip if static/embedded mode)
 if (typeof FINXCLOUD_EMBEDDED_DATA === 'undefined') {
   checkAuth();
 }
 
+// --- Tab Navigation ---
+function switchTab(tabName) {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+  document.getElementById('tab-' + tabName).classList.add('active');
+}
+
+document.querySelectorAll('.nav-tab').forEach(tab => {
+  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+});
+
+// --- Account Management ---
+async function loadAccounts() {
+  try {
+    const res = await fetch('/api/accounts');
+    if (!res.ok) return;
+    const accounts = await res.json();
+    renderAccountGrid(accounts);
+    populateAccountSelect(accounts);
+  } catch {}
+}
+
+function renderAccountGrid(accounts) {
+  const grid = document.getElementById('accountGrid');
+  if (!accounts.length) {
+    grid.innerHTML = '<p style="color:var(--gray-500);grid-column:1/-1;text-align:center;padding:2rem;">No accounts yet. Click "Add Account" to get started.</p>';
+    return;
+  }
+  const providerBadge = (p) => {
+    const colors = {aws: '#ff9900', azure: '#0078d4', gcp: '#4285f4'};
+    const labels = {aws: 'AWS', azure: 'Azure', gcp: 'GCP'};
+    return `<span style="background:${colors[p]||'#666'};color:#fff;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;">${labels[p]||p}</span>`;
+  };
+  grid.innerHTML = accounts.map(a => `
+    <div class="account-card">
+      <div class="acct-name">${providerBadge(a.provider || 'aws')} ${esc(a.name)}</div>
+      <div class="acct-meta">Region: ${esc(a.region)}${a.role_arn ? ' | IAM Role' : ''}${a.org_scan ? ' | Org Scan' : ''}</div>
+      <div class="acct-meta">Last scan: ${a.last_scan_at ? new Date(a.last_scan_at).toLocaleString() : 'Never'}</div>
+      <div class="acct-actions">
+        <button class="btn btn-primary btn-sm" onclick="scanAccount('${a.id}')">Scan</button>
+        <button class="btn btn-outline btn-sm" onclick="viewAccountDashboard('${a.id}')">View Latest</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteAccountUI('${a.id}','${esc(a.name)}')">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function populateAccountSelect(accounts) {
+  const sel = document.getElementById('scanAccountSelect');
+  sel.innerHTML = '<option value="">-- Enter credentials manually --</option>';
+  accounts.forEach(a => {
+    const pLabel = {aws:'AWS',azure:'Azure',gcp:'GCP'}[a.provider||'aws']||a.provider;
+    sel.innerHTML += `<option value="${a.id}">[${pLabel}] ${esc(a.name)} (${a.region})</option>`;
+  });
+}
+
+document.getElementById('scanAccountSelect').addEventListener('change', function() {
+  const manual = document.getElementById('manualCredFields');
+  if (this.value) {
+    manual.style.opacity = '0.5';
+    manual.querySelectorAll('input').forEach(i => i.removeAttribute('required'));
+  } else {
+    manual.style.opacity = '1';
+    document.getElementById('accessKey').setAttribute('required', '');
+    document.getElementById('secretKey').setAttribute('required', '');
+  }
+});
+
+function toggleScanProviderFields() {
+  const provider = document.getElementById('scanProvider').value;
+  document.getElementById('scanAwsFields').style.display = provider === 'aws' ? 'contents' : 'none';
+  document.getElementById('scanAzureFields').style.display = provider === 'azure' ? 'contents' : 'none';
+  document.getElementById('scanGcpFields').style.display = provider === 'gcp' ? 'contents' : 'none';
+  document.getElementById('orgScanGroup').style.display = provider === 'aws' ? '' : 'none';
+  document.getElementById('skipUtilGroup').style.display = provider === 'aws' ? '' : 'none';
+}
+
+function toggleProviderFields() {
+  const provider = document.getElementById('acctProvider').value;
+  document.getElementById('awsFields').style.display = provider === 'aws' ? '' : 'none';
+  document.getElementById('azureFields').style.display = provider === 'azure' ? '' : 'none';
+  document.getElementById('gcpFields').style.display = provider === 'gcp' ? '' : 'none';
+}
+
+function openAddAccountModal() {
+  document.getElementById('editAccountId').value = '';
+  document.getElementById('accountModalTitle').textContent = 'Add Cloud Account';
+  document.getElementById('accountForm').reset();
+  toggleProviderFields();
+  document.getElementById('addAccountModal').classList.add('show');
+}
+
+function closeAccountModal() {
+  document.getElementById('addAccountModal').classList.remove('show');
+}
+
+document.getElementById('accountForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const editId = document.getElementById('editAccountId').value;
+  const provider = document.getElementById('acctProvider').value;
+  const body = {
+    name: document.getElementById('acctName').value,
+    provider: provider,
+  };
+
+  if (provider === 'aws') {
+    body.access_key = document.getElementById('acctAccessKey').value;
+    body.secret_key = document.getElementById('acctSecretKey').value;
+    body.region = document.getElementById('acctRegion').value;
+    body.role_arn = document.getElementById('acctRoleArn').value || null;
+    body.org_scan = document.getElementById('acctOrgScan').checked;
+  } else if (provider === 'azure') {
+    body.azure_subscription_id = document.getElementById('acctAzureSubscriptionId').value;
+    body.azure_tenant_id = document.getElementById('acctAzureTenantId').value || null;
+    body.azure_client_id = document.getElementById('acctAzureClientId').value || null;
+    body.azure_client_secret = document.getElementById('acctAzureClientSecret').value || null;
+    body.region = document.getElementById('acctAzureRegion').value;
+  } else if (provider === 'gcp') {
+    body.gcp_project_id = document.getElementById('acctGcpProjectId').value;
+    body.gcp_service_account_json = document.getElementById('acctGcpServiceAccountJson').value || null;
+    body.region = document.getElementById('acctGcpRegion').value;
+  }
+
+  try {
+    let res;
+    if (editId) {
+      res = await fetch(`/api/accounts/${editId}`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+    } else {
+      res = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+    }
+    if (res.ok) {
+      closeAccountModal();
+      loadAccounts();
+    }
+  } catch {}
+});
+
+async function deleteAccountUI(id, name) {
+  if (!confirm(`Delete account "${name}"? This also deletes all saved scan results.`)) return;
+  await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+  loadAccounts();
+}
+
+async function scanAccount(accountId) {
+  currentAccountId = accountId;
+  document.getElementById('scanAccountSelect').value = accountId;
+  document.getElementById('manualCredFields').style.opacity = '0.5';
+  switchTab('scan');
+}
+
+async function viewAccountDashboard(accountId) {
+  try {
+    const res = await fetch(`/api/accounts/${accountId}/latest-scan`);
+    if (!res.ok) { alert('No scans found for this account.'); return; }
+    const scan = await res.json();
+    if (scan.result) {
+      lastScanResult = scan.result;
+      currentAccountId = accountId;
+      renderDashboard(scan.result);
+      document.getElementById('resultsTab').style.display = '';
+      switchTab('results');
+    }
+  } catch { alert('Failed to load scan results.'); }
+}
+
+// --- Scan ---
 const COLORS = [
   '#2563eb','#16a34a','#ea580c','#9333ea','#dc2626',
   '#0891b2','#ca8a04','#4f46e5','#db2777','#059669'
@@ -457,18 +1164,37 @@ document.getElementById('scanForm').addEventListener('submit', async (e) => {
   btn.disabled = true;
   progress.classList.add('show');
   errorEl.classList.remove('show');
-  document.getElementById('dashboard').classList.remove('show');
 
+  const storedAccountId = document.getElementById('scanAccountSelect').value;
+
+  const scanProvider = document.getElementById('scanProvider').value;
   const body = {
-    access_key: document.getElementById('accessKey').value,
-    secret_key: document.getElementById('secretKey').value,
-    session_token: document.getElementById('sessionToken').value || null,
-    region: document.getElementById('region').value,
-    regions: document.getElementById('regions').value || null,
+    provider: scanProvider,
     days: parseInt(document.getElementById('days').value) || 30,
-    org_scan: document.getElementById('orgScan').checked,
-    skip_utilization: document.getElementById('skipUtil').checked,
+    allocation_tags: document.getElementById('allocationTags').value || null,
+    stored_account_id: storedAccountId || null,
   };
+
+  if (scanProvider === 'aws') {
+    body.access_key = document.getElementById('accessKey').value || 'placeholder';
+    body.secret_key = document.getElementById('secretKey').value || 'placeholder';
+    body.session_token = document.getElementById('sessionToken').value || null;
+    body.role_arn = document.getElementById('roleArn').value || null;
+    body.region = document.getElementById('region').value;
+    body.regions = document.getElementById('regions').value || null;
+    body.org_scan = document.getElementById('orgScan').checked;
+    body.skip_utilization = document.getElementById('skipUtil').checked;
+  } else if (scanProvider === 'azure') {
+    body.azure_subscription_id = document.getElementById('scanAzureSubscriptionId').value;
+    body.azure_tenant_id = document.getElementById('scanAzureTenantId').value || null;
+    body.azure_client_id = document.getElementById('scanAzureClientId').value || null;
+    body.azure_client_secret = document.getElementById('scanAzureClientSecret').value || null;
+    body.region = document.getElementById('scanAzureRegion').value;
+  } else if (scanProvider === 'gcp') {
+    body.gcp_project_id = document.getElementById('scanGcpProjectId').value;
+    body.gcp_service_account_json = document.getElementById('scanGcpServiceAccountJson').value || null;
+    body.region = document.getElementById('scanGcpRegion').value;
+  }
 
   try {
     const startRes = await fetch('/api/scan', {
@@ -477,20 +1203,25 @@ document.getElementById('scanForm').addEventListener('submit', async (e) => {
       body: JSON.stringify(body),
     });
     const startData = await startRes.json();
-    const scanId = startData.scan_id;
+    if (!startRes.ok) throw new Error(startData.detail || 'Failed to start scan');
+    currentScanId = startData.scan_id;
+    if (storedAccountId) currentAccountId = storedAccountId;
 
-    // Poll for status
     while (true) {
       await new Promise(r => setTimeout(r, 2000));
-      const statusRes = await fetch(`/api/scan/${scanId}`);
+      const statusRes = await fetch(`/api/scan/${currentScanId}`);
       const statusData = await statusRes.json();
       document.getElementById('progressText').textContent = statusData.progress || 'Working...';
 
       if (statusData.status === 'done') {
-        const resultsRes = await fetch(`/api/scan/${scanId}/results`);
+        const resultsRes = await fetch(`/api/scan/${currentScanId}/results`);
         const results = await resultsRes.json();
+        lastScanResult = results;
         renderDashboard(results);
         progress.classList.remove('show');
+        document.getElementById('resultsTab').style.display = '';
+        switchTab('results');
+        loadAccounts();
         break;
       }
       if (statusData.status === 'failed') {
@@ -510,56 +1241,150 @@ function renderDashboard(data) {
   const { summary, detailed, roadmap, recommendations } = data;
   const ov = summary.overview;
 
-  // Metrics
   document.getElementById('metricResources').textContent = ov.total_resources.toLocaleString();
   document.getElementById('metricCost').textContent = '$' + ov.total_cost_30d.toFixed(2);
   document.getElementById('metricSavings').textContent = '$' + ov.total_potential_savings.toFixed(2);
   document.getElementById('metricSavingsPct').textContent = ov.savings_percentage + '%';
   document.getElementById('metricQuickWins').textContent = summary.quick_wins_count;
 
-  // Charts
+  // Budget & Commitment metrics
+  const budget = data.budget || {};
+  const commitments = data.commitments || {};
+  if (budget.forecast_eom !== undefined || commitments.total_committed_pct !== undefined) {
+    document.getElementById('budgetMetrics').style.display = '';
+    document.getElementById('metricBudget').textContent = budget.budget > 0 ? '$' + budget.budget.toFixed(2) : 'Not set';
+    document.getElementById('metricMTD').textContent = '$' + (budget.actual_mtd || 0).toFixed(2);
+    document.getElementById('metricForecast').textContent = '$' + (budget.forecast_eom || 0).toFixed(2);
+    const pctUsed = budget.pct_used || 0;
+    document.getElementById('metricBudgetPct').textContent = budget.budget > 0 ? pctUsed.toFixed(1) + '%' : '--';
+    document.getElementById('metricBudgetPct').style.color = pctUsed > 90 ? 'var(--red)' : pctUsed > 70 ? 'var(--orange)' : 'var(--green)';
+    document.getElementById('metricForecast').style.color = (budget.budget > 0 && !budget.on_track) ? 'var(--red)' : 'var(--orange)';
+    document.getElementById('metricCommitPct').textContent = (commitments.total_committed_pct || 0).toFixed(1) + '%';
+  }
+
+  // Anomaly alerts
+  const anomalies = (data.anomalies || {}).anomalies || [];
+  const alertsEl = document.getElementById('anomalyAlerts');
+  if (anomalies.length > 0) {
+    alertsEl.style.display = 'block';
+    alertsEl.innerHTML = `<div style="background:var(--red-bg);border-radius:var(--radius);padding:1rem;border-left:4px solid var(--red);">
+      <strong style="color:var(--red);">Cost Anomalies Detected (${anomalies.length})</strong>
+      <div style="margin-top:0.5rem;font-size:0.9rem;">${anomalies.map(a =>
+        `<div style="margin:0.25rem 0;">${esc(a.date)}: <strong>$${a.amount.toFixed(2)}</strong> — ${a.pct_above_avg.toFixed(0)}% above 7-day avg ($${a.rolling_avg.toFixed(2)}) <span class="badge ${a.severity === 'high' ? 'badge-high' : a.severity === 'medium' ? 'badge-medium' : 'badge-low'}">${a.severity}</span></div>`
+      ).join('')}</div>
+    </div>`;
+  } else {
+    alertsEl.style.display = 'none';
+  }
+
   renderServiceChart(detailed.cost_breakdown.by_service);
   renderRegionChart(detailed.cost_breakdown.by_region);
   renderTrendChart(detailed.cost_breakdown.daily_trend);
   renderSavingsChart(summary.savings_by_category);
+  renderMonthlyTrendChart(data.trends || {});
+  renderCommitmentsChart(commitments);
 
-  // Recommendations table
+  // Commitment recommendations
+  const commitRecs = (commitments.recommendations || []);
+  if (commitRecs.length > 0) {
+    document.getElementById('commitRecsPanel').style.display = '';
+    const commitBody = document.getElementById('commitRecsBody');
+    commitBody.innerHTML = '';
+    commitRecs.forEach(r => {
+      const prioClass = r.priority === 'high' ? 'badge-high' : r.priority === 'medium' ? 'badge-medium' : 'badge-low';
+      commitBody.innerHTML += `<tr>
+        <td>${esc(r.type || '')}</td>
+        <td>${esc(r.description || '')}</td>
+        <td><span class="badge ${prioClass}">${esc(r.priority || '')}</span></td>
+        <td class="amount-savings">${(r.estimated_savings_pct || 0).toFixed(0)}%</td>
+      </tr>`;
+    });
+  }
+
   const recsBody = document.getElementById('recsBody');
   recsBody.innerHTML = '';
   (summary.top_recommendations || []).forEach((rec, i) => {
     const effortClass = rec.effort_level === 'low' ? 'badge-low' :
                         rec.effort_level === 'medium' ? 'badge-medium' : 'badge-high';
+    const conf = rec.confidence_score != null ? rec.confidence_score : '--';
+    const confColor = conf >= 70 ? 'var(--green)' : conf >= 40 ? 'var(--orange)' : 'var(--red)';
     recsBody.innerHTML += `<tr>
       <td>${i+1}</td>
-      <td>${rec.category || ''}</td>
-      <td>${rec.title || ''}</td>
-      <td><span class="badge ${effortClass}">${rec.effort_level || ''}</span></td>
+      <td>${esc(rec.category || '')}</td>
+      <td>${esc(rec.title || '')}</td>
+      <td><span style="font-weight:600;color:${typeof conf === 'number' ? confColor : 'var(--gray-500)'}">${typeof conf === 'number' ? conf + '%' : conf}</span></td>
+      <td><span class="badge ${effortClass}">${esc(rec.effort_level || '')}</span></td>
       <td class="amount-savings">$${(rec.estimated_monthly_savings || 0).toFixed(2)}</td>
     </tr>`;
   });
 
-  // Resource inventory
   const resBody = document.getElementById('resourcesBody');
   resBody.innerHTML = '';
   const counts = detailed.resource_counts || {};
   Object.entries(counts).sort((a,b) => b[1]-a[1]).forEach(([type, count]) => {
-    resBody.innerHTML += `<tr><td>${type}</td><td>${count}</td></tr>`;
+    resBody.innerHTML += `<tr><td>${esc(type)}</td><td>${count}</td></tr>`;
   });
 
-  // Roadmap
   const roadmapCards = document.getElementById('roadmapCards');
   roadmapCards.innerHTML = '';
   (roadmap.phases || []).forEach(phase => {
     roadmapCards.innerHTML += `<div class="roadmap-phase">
       <div class="phase-head">
-        <h4>Phase ${phase.phase}: ${phase.name}</h4>
+        <h4>Phase ${phase.phase}: ${esc(phase.name)}</h4>
         <span class="badge badge-low">$${phase.total_estimated_monthly_savings.toFixed(2)} savings/mo</span>
       </div>
-      <p class="phase-meta">${phase.item_count} item${phase.item_count!==1?'s':''} &middot; Timeline: ${phase.timeline} &middot; Effort: ${phase.effort_level}</p>
+      <p class="phase-meta">${phase.item_count} item${phase.item_count!==1?'s':''} &middot; Timeline: ${esc(phase.timeline)} &middot; Effort: ${esc(phase.effort_level)}</p>
     </div>`;
   });
 
+  // Tag-based cost allocation
+  renderTagAllocation(data.tag_allocation);
+
   document.getElementById('dashboard').classList.add('show');
+}
+
+function renderTagAllocation(tagData) {
+  const panel = document.getElementById('tagAllocationPanel');
+  const content = document.getElementById('tagAllocationContent');
+  if (!tagData || !tagData.by_tag || tagData.by_tag.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+  content.innerHTML = '';
+  tagData.by_tag.forEach(tg => {
+    let html = `<h4 style="margin:0.75rem 0 0.5rem;color:var(--primary);">Tag: ${esc(tg.tag_key)}</h4>`;
+    html += `<table><thead><tr><th>Tag Value</th><th>Amount (30d)</th><th>% of Total</th></tr></thead><tbody>`;
+    const total = tg.total || 1;
+    (tg.values || []).forEach(v => {
+      const pct = ((v.amount / total) * 100).toFixed(1);
+      html += `<tr><td>${esc(v.value)}</td><td class="amount-cost">$${v.amount.toFixed(2)}</td><td>${pct}%</td></tr>`;
+    });
+    html += `</tbody></table>`;
+    content.innerHTML += html;
+  });
+}
+
+async function downloadPDF() {
+  if (!currentScanId) { alert('No scan results available.'); return; }
+  try {
+    const res = await fetch(`/api/scan/${currentScanId}/pdf`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to generate PDF');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'finxcloud_report.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('PDF download failed: ' + err.message);
+  }
 }
 
 function destroyChart(key) {
@@ -649,6 +1474,418 @@ function renderSavingsChart(savingsByCat) {
     },
   });
 }
+
+function renderMonthlyTrendChart(trends) {
+  destroyChart('monthlyTrend');
+  const monthly = trends.monthly_trend || [];
+  if (!monthly.length) return;
+  const bgColors = monthly.map(m => m.change_pct > 0 ? '#dc262688' : '#16a34a88');
+  const borderColors = monthly.map(m => m.change_pct > 0 ? '#dc2626' : '#16a34a');
+  chartInstances['monthlyTrend'] = new Chart(document.getElementById('chartMonthlyTrend'), {
+    type: 'bar',
+    data: {
+      labels: monthly.map(m => m.month),
+      datasets: [{
+        label: 'Monthly Cost (USD)', data: monthly.map(m => m.amount),
+        backgroundColor: bgColors, borderColor: borderColors, borderWidth: 1,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { afterLabel: ctx => {
+          const pct = monthly[ctx.dataIndex].change_pct;
+          return pct !== 0 ? `MoM: ${pct > 0 ? '+' : ''}${pct.toFixed(1)}%` : '';
+        }}},
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => '$' + v.toFixed(0) } },
+        x: { ticks: { font: { size: 10 } } },
+      },
+    },
+  });
+}
+
+function renderCommitmentsChart(commitments) {
+  destroyChart('commitments');
+  const committed = commitments.total_committed_pct || 0;
+  const onDemand = commitments.total_on_demand_pct || 100;
+  chartInstances['commitments'] = new Chart(document.getElementById('chartCommitments'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Committed (RI/SP)', 'On-Demand'],
+      datasets: [{
+        data: [committed, onDemand],
+        backgroundColor: ['#16a34a88', '#dc262688'],
+        borderColor: ['#16a34a', '#dc2626'],
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => ctx.parsed.toFixed(1) + '%' } },
+      },
+    },
+  });
+}
+
+// --- Email ---
+function openEmailModal() {
+  document.getElementById('emailSuccess').classList.remove('show');
+  document.getElementById('emailError').classList.remove('show');
+  document.getElementById('emailModal').classList.add('show');
+}
+
+function closeEmailModal() {
+  document.getElementById('emailModal').classList.remove('show');
+}
+
+document.getElementById('emailForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const successEl = document.getElementById('emailSuccess');
+  const errorEl = document.getElementById('emailError');
+  const btn = document.getElementById('sendEmailBtn');
+  successEl.classList.remove('show');
+  errorEl.classList.remove('show');
+  btn.disabled = true;
+
+  const toStr = document.getElementById('emailTo').value;
+  const body = {
+    to_addresses: toStr.split(',').map(s => s.trim()).filter(Boolean),
+    subject: document.getElementById('emailSubject').value,
+    method: document.getElementById('emailMethod').value,
+    from_address: document.getElementById('emailFrom').value || null,
+    scan_id: currentScanId,
+    account_id: currentAccountId,
+  };
+
+  try {
+    const res = await fetch('/api/email/send-report', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      successEl.textContent = data.message || 'Report sent successfully!';
+      successEl.classList.add('show');
+    } else {
+      throw new Error(data.detail || 'Failed to send email');
+    }
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.add('show');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// --- Utilities ---
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ===================================================================
+// SCHEDULES
+// ===================================================================
+async function loadSchedules() {
+  try {
+    const res = await fetch('/api/schedules');
+    if (!res.ok) return;
+    const schedules = await res.json();
+    renderScheduleList(schedules);
+  } catch {}
+}
+
+function renderScheduleList(schedules) {
+  const el = document.getElementById('scheduleList');
+  if (!schedules.length) {
+    el.innerHTML = '<p style="color:var(--gray-500);text-align:center;padding:2rem;">No schedules configured. Click "+ Add Schedule" to create one.</p>';
+    return;
+  }
+  let html = '<table><thead><tr><th>Instance</th><th>Region</th><th>Stop</th><th>Start</th><th>Days</th><th>Enabled</th><th>Actions</th></tr></thead><tbody>';
+  for (const s of schedules) {
+    const enabled = s.enabled ? '<span style="color:var(--green);font-weight:600;">Yes</span>' : '<span style="color:var(--red);font-weight:600;">No</span>';
+    html += `<tr>
+      <td><code>${esc(s.instance_id)}</code></td>
+      <td>${esc(s.region)}</td>
+      <td>${esc(s.stop_time)}</td>
+      <td>${esc(s.start_time)}</td>
+      <td>${(s.days||[]).join(', ')}</td>
+      <td>${enabled}</td>
+      <td>
+        <button class="btn btn-sm ${s.enabled ? 'btn-outline' : 'btn-green'}" onclick="toggleSchedule('${s.id}', ${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteSchedule('${s.id}')">Delete</button>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function openScheduleModal() {
+  document.getElementById('editScheduleId').value = '';
+  document.getElementById('scheduleModalTitle').textContent = 'Add Schedule';
+  document.getElementById('schedInstanceId').value = '';
+  document.getElementById('schedRegion').value = 'us-east-1';
+  document.getElementById('schedStopTime').value = '19:00';
+  document.getElementById('schedStartTime').value = '08:00';
+  document.querySelectorAll('.sched-day').forEach(cb => {
+    cb.checked = ['mon','tue','wed','thu','fri'].includes(cb.value);
+  });
+  document.getElementById('scheduleModal').classList.add('show');
+}
+
+function closeScheduleModal() {
+  document.getElementById('scheduleModal').classList.remove('show');
+}
+
+document.getElementById('scheduleForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const days = Array.from(document.querySelectorAll('.sched-day:checked')).map(cb => cb.value);
+  const body = {
+    instance_id: document.getElementById('schedInstanceId').value,
+    region: document.getElementById('schedRegion').value,
+    stop_time: document.getElementById('schedStopTime').value,
+    start_time: document.getElementById('schedStartTime').value,
+    days: days,
+  };
+  try {
+    const res = await fetch('/api/schedules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      closeScheduleModal();
+      loadSchedules();
+    }
+  } catch {}
+});
+
+async function toggleSchedule(id, enabled) {
+  try {
+    await fetch(`/api/schedules/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    loadSchedules();
+  } catch {}
+}
+
+async function deleteSchedule(id) {
+  if (!confirm('Delete this schedule?')) return;
+  try {
+    await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
+    loadSchedules();
+  } catch {}
+}
+
+// ===================================================================
+// WEBHOOKS / NOTIFICATIONS
+// ===================================================================
+async function loadWebhooks() {
+  try {
+    const res = await fetch('/api/webhooks');
+    if (!res.ok) return;
+    const webhooks = await res.json();
+    renderWebhookList(webhooks);
+  } catch {}
+}
+
+function renderWebhookList(webhooks) {
+  const el = document.getElementById('webhookList');
+  if (!webhooks.length) {
+    el.innerHTML = '<p style="color:var(--gray-500);text-align:center;padding:2rem;">No webhooks configured. Click "+ Add Webhook" to create one.</p>';
+    return;
+  }
+  let html = '<table><thead><tr><th>Name</th><th>Type</th><th>Events</th><th>Enabled</th><th>Actions</th></tr></thead><tbody>';
+  for (const w of webhooks) {
+    const enabled = w.enabled ? '<span style="color:var(--green);font-weight:600;">Yes</span>' : '<span style="color:var(--red);font-weight:600;">No</span>';
+    const events = (w.events||[]).map(e => e.replace(/_/g,' ')).join(', ');
+    html += `<tr>
+      <td>${esc(w.name)}</td>
+      <td><span class="badge ${w.type==='slack'?'badge-low':'badge-medium'}">${esc(w.type)}</span></td>
+      <td style="font-size:0.85rem;">${esc(events)}</td>
+      <td>${enabled}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="testWebhook('${w.id}','${esc(w.url)}')">Test</button>
+        <button class="btn btn-sm ${w.enabled ? 'btn-outline' : 'btn-green'}" onclick="toggleWebhook('${w.id}', ${!w.enabled})">${w.enabled ? 'Disable' : 'Enable'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteWebhook('${w.id}')">Delete</button>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function openWebhookModal() {
+  document.getElementById('editWebhookId').value = '';
+  document.getElementById('webhookModalTitle').textContent = 'Add Webhook';
+  document.getElementById('whName').value = '';
+  document.getElementById('whUrl').value = '';
+  document.getElementById('whType').value = 'slack';
+  document.querySelectorAll('.wh-event').forEach(cb => cb.checked = true);
+  document.getElementById('webhookModal').classList.add('show');
+}
+
+function closeWebhookModal() {
+  document.getElementById('webhookModal').classList.remove('show');
+}
+
+document.getElementById('webhookForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const events = Array.from(document.querySelectorAll('.wh-event:checked')).map(cb => cb.value);
+  const body = {
+    name: document.getElementById('whName').value,
+    url: document.getElementById('whUrl').value,
+    type: document.getElementById('whType').value,
+    events: events,
+  };
+  try {
+    const res = await fetch('/api/webhooks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      closeWebhookModal();
+      loadWebhooks();
+    }
+  } catch {}
+});
+
+async function toggleWebhook(id, enabled) {
+  try {
+    await fetch(`/api/webhooks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    loadWebhooks();
+  } catch {}
+}
+
+async function deleteWebhook(id) {
+  if (!confirm('Delete this webhook?')) return;
+  try {
+    await fetch(`/api/webhooks/${id}`, { method: 'DELETE' });
+    loadWebhooks();
+  } catch {}
+}
+
+async function testWebhook(id, url) {
+  try {
+    const res = await fetch('/api/webhooks/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhook_url: url, event: 'scan_complete', data: { message: 'Test notification from FinXCloud' } }),
+    });
+    if (res.ok) {
+      alert('Test notification sent successfully!');
+    } else {
+      const err = await res.json();
+      alert('Test failed: ' + (err.detail || 'Unknown error'));
+    }
+  } catch (e) {
+    alert('Test failed: ' + e.message);
+  }
+}
+
+// ===================================================================
+// BUDGETS
+// ===================================================================
+async function loadBudgets() {
+  try {
+    const res = await fetch('/api/budgets');
+    if (!res.ok) return;
+    const budgets = await res.json();
+    renderBudgetList(budgets);
+  } catch {}
+}
+
+function renderBudgetList(budgets) {
+  const el = document.getElementById('budgetList');
+  const entries = Object.entries(budgets || {});
+  if (!entries.length) {
+    el.innerHTML = '<p style="color:var(--gray-500);text-align:center;padding:2rem;">No budgets set. Select an account above and set a monthly budget.</p>';
+    return;
+  }
+  let html = '<table><thead><tr><th>Account ID</th><th>Monthly Budget</th><th>Actions</th></tr></thead><tbody>';
+  for (const [accountId, amount] of entries) {
+    html += `<tr>
+      <td><code>${esc(accountId)}</code></td>
+      <td class="amount-cost">$${parseFloat(amount).toFixed(2)}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="removeBudget('${esc(accountId)}')">Remove</button></td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+async function populateBudgetAccountSelect() {
+  try {
+    const res = await fetch('/api/accounts');
+    if (!res.ok) return;
+    const accounts = await res.json();
+    const sel = document.getElementById('budgetAccountSelect');
+    sel.innerHTML = '<option value="">-- Select account --</option>';
+    accounts.forEach(a => {
+      const pLabel = {aws:'AWS',azure:'Azure',gcp:'GCP'}[a.provider||'aws']||a.provider;
+      sel.innerHTML += `<option value="${a.id}">[${pLabel}] ${esc(a.name)}</option>`;
+    });
+  } catch {}
+}
+
+async function saveBudget() {
+  const accountId = document.getElementById('budgetAccountSelect').value;
+  const amount = parseFloat(document.getElementById('budgetAmount').value);
+  if (!accountId) { alert('Please select an account.'); return; }
+  if (isNaN(amount) || amount < 0) { alert('Please enter a valid budget amount.'); return; }
+  try {
+    const res = await fetch('/api/budgets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId, monthly_budget: amount }),
+    });
+    if (res.ok) {
+      document.getElementById('budgetAmount').value = '';
+      loadBudgets();
+    } else {
+      const err = await res.json();
+      alert('Failed to set budget: ' + (err.detail || 'Unknown error'));
+    }
+  } catch (e) {
+    alert('Failed to set budget: ' + e.message);
+  }
+}
+
+async function removeBudget(accountId) {
+  if (!confirm('Remove budget for this account?')) return;
+  try {
+    await fetch('/api/budgets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId, monthly_budget: 0 }),
+    });
+    loadBudgets();
+  } catch {}
+}
+
+// Load schedules, webhooks, and budgets on tab switch
+const origSwitchTab = switchTab;
+switchTab = function(tabName) {
+  origSwitchTab(tabName);
+  if (tabName === 'schedules') loadSchedules();
+  if (tabName === 'notifications') loadWebhooks();
+  if (tabName === 'budgets') { loadBudgets(); populateBudgetAccountSelect(); }
+};
 </script>
 
 
