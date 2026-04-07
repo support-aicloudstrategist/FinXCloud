@@ -986,7 +986,22 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
 });
 
 // --- Account Management ---
+const isStaticMode = typeof FINXCLOUD_STATIC_AUTH !== 'undefined' || typeof FINXCLOUD_EMBEDDED_DATA !== 'undefined';
+
+function getLocalAccounts() {
+  try { return JSON.parse(localStorage.getItem('finxcloud_accounts') || '[]'); } catch { return []; }
+}
+function saveLocalAccounts(accounts) {
+  localStorage.setItem('finxcloud_accounts', JSON.stringify(accounts));
+}
+
 async function loadAccounts() {
+  if (isStaticMode) {
+    const accounts = getLocalAccounts();
+    renderAccountGrid(accounts);
+    populateAccountSelect(accounts);
+    return;
+  }
   try {
     const res = await fetch('/api/accounts');
     if (!res.ok) return;
@@ -1097,6 +1112,21 @@ document.getElementById('accountForm').addEventListener('submit', async (e) => {
     body.region = document.getElementById('acctGcpRegion').value;
   }
 
+  if (isStaticMode) {
+    const accounts = getLocalAccounts();
+    if (editId) {
+      const idx = accounts.findIndex(a => a.id === editId);
+      if (idx !== -1) Object.assign(accounts[idx], body);
+    } else {
+      body.id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36);
+      body.created_at = new Date().toISOString();
+      accounts.push(body);
+    }
+    saveLocalAccounts(accounts);
+    closeAccountModal();
+    loadAccounts();
+    return;
+  }
   try {
     let res;
     if (editId) {
@@ -1121,6 +1151,12 @@ document.getElementById('accountForm').addEventListener('submit', async (e) => {
 
 async function deleteAccountUI(id, name) {
   if (!confirm(`Delete account "${name}"? This also deletes all saved scan results.`)) return;
+  if (isStaticMode) {
+    const accounts = getLocalAccounts().filter(a => a.id !== id);
+    saveLocalAccounts(accounts);
+    loadAccounts();
+    return;
+  }
   await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
   loadAccounts();
 }
@@ -1133,6 +1169,18 @@ async function scanAccount(accountId) {
 }
 
 async function viewAccountDashboard(accountId) {
+  if (isStaticMode) {
+    if (typeof FINXCLOUD_EMBEDDED_DATA !== 'undefined') {
+      lastScanResult = FINXCLOUD_EMBEDDED_DATA;
+      currentAccountId = accountId;
+      renderDashboard(FINXCLOUD_EMBEDDED_DATA);
+      document.getElementById('resultsTab').style.display = '';
+      switchTab('results');
+    } else {
+      alert('No scan data available. Run FinXCloud locally to scan this account.');
+    }
+    return;
+  }
   try {
     const res = await fetch(`/api/accounts/${accountId}/latest-scan`);
     if (!res.ok) { alert('No scans found for this account.'); return; }
