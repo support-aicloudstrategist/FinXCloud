@@ -986,7 +986,7 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
 });
 
 // --- Account Management ---
-const isStaticMode = typeof FINXCLOUD_STATIC_AUTH !== 'undefined' || typeof FINXCLOUD_EMBEDDED_DATA !== 'undefined';
+function isStaticMode() { return typeof FINXCLOUD_STATIC_AUTH !== 'undefined' || typeof FINXCLOUD_EMBEDDED_DATA !== 'undefined'; }
 
 function getLocalAccounts() {
   try { return JSON.parse(localStorage.getItem('finxcloud_accounts') || '[]'); } catch { return []; }
@@ -996,7 +996,7 @@ function saveLocalAccounts(accounts) {
 }
 
 async function loadAccounts() {
-  if (isStaticMode) {
+  if (isStaticMode()) {
     const accounts = getLocalAccounts();
     renderAccountGrid(accounts);
     populateAccountSelect(accounts);
@@ -1112,7 +1112,7 @@ document.getElementById('accountForm').addEventListener('submit', async (e) => {
     body.region = document.getElementById('acctGcpRegion').value;
   }
 
-  if (isStaticMode) {
+  if (isStaticMode()) {
     const accounts = getLocalAccounts();
     if (editId) {
       const idx = accounts.findIndex(a => a.id === editId);
@@ -1151,7 +1151,7 @@ document.getElementById('accountForm').addEventListener('submit', async (e) => {
 
 async function deleteAccountUI(id, name) {
   if (!confirm(`Delete account "${name}"? This also deletes all saved scan results.`)) return;
-  if (isStaticMode) {
+  if (isStaticMode()) {
     const accounts = getLocalAccounts().filter(a => a.id !== id);
     saveLocalAccounts(accounts);
     loadAccounts();
@@ -1169,7 +1169,7 @@ async function scanAccount(accountId) {
 }
 
 async function viewAccountDashboard(accountId) {
-  if (isStaticMode) {
+  if (isStaticMode()) {
     if (typeof FINXCLOUD_EMBEDDED_DATA !== 'undefined') {
       lastScanResult = FINXCLOUD_EMBEDDED_DATA;
       currentAccountId = accountId;
