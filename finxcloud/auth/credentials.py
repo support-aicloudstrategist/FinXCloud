@@ -1,10 +1,13 @@
 """AWS credential management for FinXCloud cost optimization."""
 
+import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -49,7 +52,13 @@ def create_session(creds: AWSCredentials) -> boto3.Session:
         ) from exc
 
     if creds.role_arn:
-        session = _assume_role(session, creds.role_arn, creds.region)
+        try:
+            session = _assume_role(session, creds.role_arn, creds.region)
+        except Exception as exc:
+            log.warning(
+                "AssumeRole failed for %s — falling back to direct credentials. Error: %s",
+                creds.role_arn, exc,
+            )
 
     return session
 
