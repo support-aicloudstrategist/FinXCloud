@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
 import uuid
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -979,6 +980,60 @@ async def test_webhook(req: NotifyRequest, _user: dict = Depends(require_auth)):
     if result["status"] != "ok":
         raise HTTPException(status_code=502, detail=result.get("error", "Webhook send failed"))
     return result
+
+
+# ---------------------------------------------------------------------------
+# Slack Bot — slash commands and events
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/slack/commands")
+async def slack_slash_command(request: Request):
+    """Handle incoming Slack slash commands (e.g. /task create, /task status).
+
+    Slack sends form-encoded POST bodies. We verify the request signature,
+    parse the command, and return a Block Kit response.
+    """
+    from finxcloud.integrations.slack.bot import SlackBot, parse_slash_form_body
+
+    body = await request.body()
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
+
+    bot = SlackBot()
+    if not bot.verify_request(body, timestamp, signature):
+        raise HTTPException(status_code=401, detail="Invalid Slack signature")
+
+    form_data = parse_slash_form_body(body)
+    result = bot.handle_slash_command(form_data)
+    return JSONResponse(content=result)
+
+
+@app.post("/api/slack/events")
+async def slack_events(request: Request):
+    """Handle Slack Events API callbacks (messages, mentions, url_verification).
+
+    Returns the url_verification challenge on setup, and processes
+    message/app_mention events for task management via DM or channel mention.
+    """
+    from finxcloud.integrations.slack.bot import SlackBot
+
+    body = await request.body()
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
+
+    bot = SlackBot()
+
+    # url_verification does not always include valid signatures
+    payload = json.loads(body)
+    if payload.get("type") == "url_verification":
+        return JSONResponse(content={"challenge": payload.get("challenge", "")})
+
+    if not bot.verify_request(body, timestamp, signature):
+        raise HTTPException(status_code=401, detail="Invalid Slack signature")
+
+    result = bot.handle_event(payload)
+    return JSONResponse(content=result)
 
 
 # ---------------------------------------------------------------------------
