@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from dotenv import load_dotenv
+load_dotenv()
+
+import datetime
 import json
 import logging
 import os
@@ -356,6 +360,17 @@ async def download_scan_pdf(scan_id: str, _user: dict = Depends(require_auth)):
     )
 
 
+def _make_json_safe(obj):
+    """Recursively convert datetime objects to ISO strings for JSON serialization."""
+    if isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {k: _make_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_make_json_safe(i) for i in obj]
+    return obj
+
+
 def _run_scan(scan_id: str, req: ScanRequest) -> None:
     """Execute the full scan pipeline in a background thread."""
     scan = _scans[scan_id]
@@ -455,7 +470,7 @@ def _run_cloud_provider_scan(scan_id: str, req: ScanRequest, scan: dict, provide
     roadmap_reporter = RoadmapReporter(recommendations)
     roadmap_report = roadmap_reporter.generate()
 
-    result = {
+    result = _make_json_safe({
         "summary": summary_report,
         "detailed": detailed_report,
         "roadmap": roadmap_report,
@@ -463,7 +478,7 @@ def _run_cloud_provider_scan(scan_id: str, req: ScanRequest, scan: dict, provide
         "resources": all_resources,
         "cost_data": merged_cost_data,
         "provider": provider_name,
-    }
+    })
 
     stored_acct_id = scan.get("stored_account_id")
     if stored_acct_id:
@@ -638,7 +653,7 @@ def _run_aws_scan(scan_id: str, req: ScanRequest, scan: dict) -> None:
         s3w = S3Writer(session, req.output_s3_bucket, req.output_s3_prefix)
         s3_keys = s3w.write_all(detailed_report, summary_report, roadmap_report)
 
-    result = {
+    result = _make_json_safe({
         "summary": summary_report,
         "detailed": detailed_report,
         "roadmap": roadmap_report,
@@ -652,7 +667,7 @@ def _run_aws_scan(scan_id: str, req: ScanRequest, scan: dict) -> None:
         "tag_allocation": tag_allocation_data,
         "s3_keys": s3_keys,
         "provider": "aws",
-    }
+    })
 
     # Persist scan result if linked to a stored account
     stored_acct_id = scan.get("stored_account_id")
