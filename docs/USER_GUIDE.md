@@ -10,7 +10,7 @@ End-to-end instructions for scanning AWS accounts and generating cost optimizati
 2. [Installation](#2-installation)
 3. [AWS Account Setup](#3-aws-account-setup)
 4. [Running Your First Scan](#4-running-your-first-scan)
-5. [Understanding the Reports](#5-understanding-the-reports)
+5. [Understanding the Reports](#5-understanding-the-reports) — includes [Roadmap Phases](#implementation-roadmap-phases) and [Confidence Scores](#confidence-score)
 6. [Using the Web Dashboard](#6-using-the-web-dashboard)
 7. [Adding a New AWS Account](#7-adding-a-new-aws-account)
 8. [Scanning AWS Organizations](#8-scanning-aws-organizations)
@@ -253,6 +253,46 @@ finxcloud -v scan
 | Idle Load Balancers | ALB/NLB with zero healthy targets |
 | Lambda Right-sizing | Functions allocated more than 512MB memory |
 | OpenSearch Domains | Domain sizing and configuration optimization |
+
+### Implementation Roadmap Phases
+
+The roadmap groups recommendations into three phases based on **effort level** — how hard each fix is to implement:
+
+| Phase | Effort | Timeline | What Goes Here |
+|-------|--------|----------|----------------|
+| **Phase 1: Quick Wins** | Low | < 1 day per item | Simple, reversible changes: terminate stopped instances, delete unattached volumes, release unused Elastic IPs |
+| **Phase 2: Medium Term** | Medium | 1-2 weeks | Requires planning and testing: add S3 lifecycle policies, resize OpenSearch domains, optimize Lambda memory |
+| **Phase 3: Strategic** | High | 1+ month | Major architectural changes: migrate RDS instance types, re-architect clusters, purchase Reserved Instances or Savings Plans |
+
+**How effort levels are assigned:**
+- **Low:** One-click or single CLI command (terminate, delete, release). Easily reversible.
+- **Medium:** Requires configuration, testing, or staged rollout (lifecycle policies, rightsizing). May need validation.
+- **High:** Involves downtime, data migration, or long-term financial commitments. Requires careful planning.
+
+**Savings calculation:** Phase savings are the sum of estimated monthly savings for all items in that phase. Some items (like S3 lifecycle policies) show $0 because the savings depend on data volume and age distribution — the tool conservatively reports $0 rather than guess. Real savings emerge over time as data transitions to cheaper storage tiers.
+
+### Confidence Score
+
+Each recommendation includes a confidence score (0-100%) indicating how certain the tool is about the finding. Higher scores mean stronger evidence.
+
+**How confidence is computed:**
+
+| Factor | Impact | Description |
+|--------|--------|-------------|
+| Base score | 50% | Every recommendation starts here |
+| Utilization metrics available | +25% | CloudWatch CPU/memory data backs up the recommendation |
+| No utilization metrics | -10% | Tool relies only on resource state (stopped, unattached) |
+| Resource age > 90 days | +15% | Long history of data supports the finding |
+| Resource age > 30 days | +10% | Moderate history |
+| Resource age > 7 days | +5% | Some data available |
+| Resource age < 7 days | -10% | Too new to judge reliably |
+| Simple resource type (EBS, EIP, snapshot) | +10% | Straightforward checks with clear-cut answers |
+
+**Interpreting scores:**
+- **80-100%:** Strong evidence — act with confidence
+- **60-79%:** Moderate evidence — worth investigating, verify before acting
+- **40-59%:** Low evidence — review manually, may need more data
+- **< 40%:** Preliminary — resource is too new or data is insufficient
 
 ---
 
