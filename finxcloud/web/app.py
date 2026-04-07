@@ -995,12 +995,16 @@ async def slack_slash_command(request: Request):
     parse the command, and return a Block Kit response.
     """
     from finxcloud.integrations.slack.bot import SlackBot, parse_slash_form_body
+    from finxcloud.integrations.slack.paperclip_client import PaperclipClient
 
     body = await request.body()
     timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
     signature = request.headers.get("X-Slack-Signature", "")
 
-    bot = SlackBot()
+    task_store = PaperclipClient()
+    if not task_store.is_configured:
+        task_store = None  # Falls back to InMemoryTaskStore
+    bot = SlackBot(task_store=task_store)
     if not bot.verify_request(body, timestamp, signature):
         raise HTTPException(status_code=401, detail="Invalid Slack signature")
 
@@ -1017,12 +1021,16 @@ async def slack_events(request: Request):
     message/app_mention events for task management via DM or channel mention.
     """
     from finxcloud.integrations.slack.bot import SlackBot
+    from finxcloud.integrations.slack.paperclip_client import PaperclipClient
 
     body = await request.body()
     timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
     signature = request.headers.get("X-Slack-Signature", "")
 
-    bot = SlackBot()
+    task_store = PaperclipClient()
+    if not task_store.is_configured:
+        task_store = None
+    bot = SlackBot(task_store=task_store)
 
     # url_verification does not always include valid signatures
     payload = json.loads(body)
